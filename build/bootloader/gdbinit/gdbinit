@@ -1,0 +1,2 @@
+source /home/olisinka/test/build/bootloader/gdbinit/symbols
+source /home/olisinka/test/build/bootloader/gdbinit/connect
