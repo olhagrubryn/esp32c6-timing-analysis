@@ -1,0 +1,16 @@
+Command: ninja all
+[1/9] Performing build step for 'bootloader'
+[1/1] cd /home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/esp-idf/esptool_py && /home/olisinka/.espressif/python_env/idf5.5_py3.10_env/bin/python /home/olisinka/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/bootloader.bin
+Bootloader binary size 0x57e0 bytes. 0x2820 bytes (31%) free.
+[2/7] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/app_main.c.obj
+[3/7] Linking C static library esp-idf/main/libmain.a
+[4/7] Generating esp-idf/esp_system/ld/sections.ld
+[5/7] Linking CXX executable test.elf
+[6/7] Generating binary image from built executable
+esptool.py v4.10.0
+Creating esp32c6 image...
+Merged 1 ELF section
+Successfully created esp32c6 image.
+Generated /home/olisinka/BA/esp32c6-timing-analysis-1/build/test.bin
+[7/7] cd /home/olisinka/BA/esp32c6-timing-analysis-1/build/esp-idf/esptool_py && /home/olisinka/.espressif/python_env/idf5.5_py3.10_env/bin/python /home/olisinka/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /home/olisinka/BA/esp32c6-timing-analysis-1/build/partition_table/partition-table.bin /home/olisinka/BA/esp32c6-timing-analysis-1/build/test.bin
+test.bin binary size 0x27cd0 bytes. Smallest app partition is 0x100000 bytes. 0xd8330 bytes (84%) free.

@@ -1,2 +1,2 @@
-source /home/olisinka/test/build/bootloader/gdbinit/symbols
-source /home/olisinka/test/build/bootloader/gdbinit/connect
+source /home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/gdbinit/symbols
+source /home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/gdbinit/connect

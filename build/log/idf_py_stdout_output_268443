@@ -1,0 +1,154 @@
+Command: /home/olisinka/.espressif/python_env/idf5.5_py3.10_env/bin/python /home/olisinka/esp/esp-idf/tools/idf_monitor.py -p /dev/ttyUSB0 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32c6 --revision 0 --decode-panic backtrace /home/olisinka/BA/esp32c6-timing-analysis-1/build/test.elf /home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/bootloader.elf -m '/home/olisinka/.espressif/python_env/idf5.5_py3.10_env/bin/python' '/home/olisinka/esp/esp-idf/tools/idf.py' '-p' '/dev/ttyUSB0'
+ESP-ROM:esp32c6-20220919
+Build:Sep 19 2022
+rst:0x1 (POWERON),boot:0xc (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:2
+load:0x40875730,len:0x1744
+load:0x4086b910,len:0xe78
+load:0x4086e610,len:0x31c8
+entry 0x4086b91a
+[0;32mI (23) boot: ESP-IDF v5.5 2nd stage bootloader[0m
+[0;32mI (24) boot: compile time Nov  4 2025 15:01:18[0m
+[0;32mI (24) boot: chip revision: v0.1[0m
+[0;32mI (24) boot: efuse block revision: v0.3[0m
+[0;32mI (27) boot.esp32c6: SPI Speed      : 80MHz[0m
+[0;32mI (31) boot.esp32c6: SPI Mode       : DIO[0m
+[0;32mI (34) boot.esp32c6: SPI Flash Size : 2MB[0m
+[0;32mI (38) boot: Enabling RNG early entropy source...[0m
+[0;32mI (43) boot: Partition Table:[0m
+[0;32mI (45) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (52) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (58) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (65) boot:  2 factory          factory app      00 00 00010000 00100000[0m
+[0;32mI (71) boot: End of partition table[0m
+[0;32mI (75) esp_image: segment 0: paddr=00010020 vaddr=42018020 size=096e8h ( 38632) map[0m
+[0;32mI (89) esp_image: segment 1: paddr=00019710 vaddr=40800000 size=06908h ( 26888) load[0m
+[0;32mI (96) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=12a54h ( 76372) map[0m
+[0;32mI (111) esp_image: segment 3: paddr=00032a7c vaddr=40806908 size=06f1ch ( 28444) load[0m
+[0;32mI (118) esp_image: segment 4: paddr=000399a0 vaddr=4080d830 size=0186ch (  6252) load[0m
+[0;32mI (120) esp_image: segment 5: paddr=0003b214 vaddr=50000000 size=00074h (   116) load[0m
+[0;32mI (126) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (128) boot: Disabling RNG early entropy source...[0m
+[0;32mI (144) cpu_start: Unicore app[0m
+[0;32mI (152) cpu_start: Pro cpu start user code[0m
+[0;32mI (153) cpu_start: cpu freq: 160000000 Hz[0m
+[0;32mI (153) app_init: Application information:[0m
+[0;32mI (153) app_init: Project name:     test[0m
+[0;32mI (156) app_init: App version:      7f06814-dirty[0m
+[0;32mI (161) app_init: Compile time:     Nov  4 2025 15:01:12[0m
+[0;32mI (166) app_init: ELF file SHA256:  0f7856734...[0m
+[0;32mI (170) app_init: ESP-IDF:          v5.5[0m
+[0;32mI (174) efuse_init: Min chip rev:     v0.0[0m
+[0;32mI (177) efuse_init: Max chip rev:     v0.99 [0m
+[0;32mI (181) efuse_init: Chip rev:         v0.1[0m
+[0;32mI (185) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (192) heap_init: At 40810050 len 0006C5C0 (433 KiB): RAM[0m
+[0;32mI (197) heap_init: At 4087C610 len 00002F54 (11 KiB): RAM[0m
+[0;32mI (202) heap_init: At 50000074 len 00003F74 (15 KiB): RTCRAM[0m
+[0;33mW (208) spi_flash: GigaDevice detected but related driver is not linked, please check option `SPI_FLASH_SUPPORT_GD_CHIP`[0m
+[0;32mI (218) spi_flash: detected chip: generic[0m
+[0;32mI (222) spi_flash: flash io: dio[0m
+[0;33mW (225) spi_flash: Detected size(8192k) larger than the size in the binary image header(2048k). Using the size in the binary image header.[0m
+[0;32mI (237) sleep_gpio: Configure to isolate all GPIO pins in sleep state[0m
+[0;32mI (243) sleep_gpio: Enable automatic switching of GPIO sleep configuration[0m
+[0;32mI (250) coexist: coex firmware version: 831ec70[0m
+[0;32mI (257) coexist: coexist rom version 5b8dcfa[0m
+[0;32mI (258) main_task: Started on CPU0[0m
+[0;32mI (258) main_task: Calling app_main()[0m
+ESP32_C6_BENCHMARK_START
+Chip_Revision: v0.1
+CPU_Frequency: 160 MHz
+ESP_IDF_Version: v5.5
+BEGIN_BENCHMARK_SUITE
+ESP32_C6_BENCHMARK_DATA
+Compile_Time: Nov  4 2025 15:01:28
+timestamp,test_name,iterations,total_time_us,time_per_op_us,ops_per_second
+LEERER_SCHLEIFEN_BENCHMARK
+Iterationen: 1000000
+Gesamtzeit: 43782 us
+Zeit pro Operation: 0.044 us
+Operationen pro Sekunde: 22840437
+4108595,empty_loop,1000000,43782,0.044,22840437
+ARITHMETISCHE_OPERATIONEN
+Addition: 3127 us
+4116346,addition,100000,3127,0.031,31979533
+Multiplikation: 3760 us
+4122573,multiplication,100000,3760,0.038,26595745
+Division: 3127 us
+4128532,division,100000,3127,0.031,31979533
+Ergebnis: 0
+SPEICHER_ZUGRIFFS_MUSTER
+Sequentielle Zugriffe: 1192 us
+4137026,sequential_access,10000,1192,0.119,8389262
+Summe: 495000
+GLEITKOMMA_OPERATIONEN
+Float Addition: 2190 us
+4147186,float_addition,50000,2190,0.044,22831050
+Float Multiplikation: 2189 us
+4154121,float_multiplication,50000,2189,0.044,22841480
+Ergebnis: 97408.266
+FUNKTIONS_AUFRUF_OVERHEAD
+Funktionsaufrufe: 100000
+Gesamtzeit: 105076 us
+Zeit pro Funktionsaufruf: 1.051 us
+4268516,function_call,100000,105076,1.051,951692
+TIMER_LEISTUNGSMESSUNG
+Timer-Callbacks: 9
+Tatsaechliche Zeit: 999982 us
+5271150,timer_performance,9,999982,111109.111,9
+SCHLAFMODUS_TEST
+Aktiver Modus - 1 Sekunde
+Aktiver Modus Zeit: 998460 us
+Light Sleep - 500ms
+Light Sleep Zeit: 499444 us
+6770652,light_sleep,1,499444,499444.000,0
+END_BENCHMARK_SUITE
+BENCHMARK_ABGESCHLOSSEN
+CYCLE_RESTART_1
+BEGIN_BENCHMARK_SUITE
+ESP32_C6_BENCHMARK_DATA
+Compile_Time: Nov  4 2025 15:01:28
+timestamp,test_name,iterations,total_time_us,time_per_op_us,ops_per_second
+LEERER_SCHLEIFEN_BENCHMARK
+Iterationen: 1000000
+Gesamtzeit: 43781 us
+Zeit pro Operation: 0.044 us
+Operationen pro Sekunde: 22840958
+36819092,empty_loop,1000000,43781,0.044,22840958
+ARITHMETISCHE_OPERATIONEN
+Addition: 3126 us
+36826953,addition,100000,3126,0.031,31989763
+Multiplikation: 3758 us
+36833266,multiplication,100000,3758,0.038,26609899
+Division: 3126 us
+36839313,division,100000,3126,0.031,31989763
+Ergebnis: 0
+SPEICHER_ZUGRIFFS_MUSTER
+Sequentielle Zugriffe: 1189 us
+36847893,sequential_access,10000,1189,0.119,8410429
+Summe: 495000
+GLEITKOMMA_OPERATIONEN
+Float Addition: 2189 us
+36858138,float_addition,50000,2189,0.044,22841480
+Float Multiplikation: 2189 us
+36865165,float_multiplication,50000,2189,0.044,22841480
+Ergebnis: 97408.266
+FUNKTIONS_AUFRUF_OVERHEAD
+Funktionsaufrufe: 100000
+Gesamtzeit: 105076 us
+Zeit pro Funktionsaufruf: 1.051 us
+36979640,function_call,100000,105076,1.051,951692
+TIMER_LEISTUNGSMESSUNG
+Timer-Callbacks: 9
+Tatsaechliche Zeit: 997513 us
+37979868,timer_performance,9,997513,110834.778,9
+SCHLAFMODUS_TEST
+Aktiver Modus - 1 Sekunde
+Aktiver Modus Zeit: 998386 us
+Light Sleep - 500ms
+Light Sleep Zeit: 499740 us
+39479667,light_sleep,1,499740,499740.000,0
+END_BENCHMARK_SUITE
+BENCHMARK_ABGESCHLOSSEN
+CYCLE_RESTART_2

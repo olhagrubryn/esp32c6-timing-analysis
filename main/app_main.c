@@ -4,284 +4,314 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
-#include "esp_sleep.h"
+#include "esp_system.h"
 
-// ============ DATEN-AUSGABE FUNKTIONEN ============
-void print_csv_header(void) {
-    printf("timestamp,test_name,iterations,total_time_us,time_per_op_us,ops_per_second\n");
+// ============ KONFIGURATION ============
+#define MAX_TESTS 100
+
+// ============ TIMER FUNKTIONEN ============
+/**
+ * @brief Gibt aktuelle Zeit in Mikrosekunden zurück
+ * @return Zeit in Mikrosekunden
+ */
+static inline uint64_t get_time_us(void) {
+    return esp_timer_get_time();
 }
 
-void print_measurement_data(const char* test_name, uint64_t total_time, int iterations, 
-                           double time_per_op, double ops_per_second) {
+/**
+ * @brief Schätzt Zyklen basierend auf Zeit und CPU-Frequenz
+ * @return Geschätzte Zyklenanzahl
+ */
+static inline uint32_t estimate_cycles(uint64_t time_us) {
+    // ESP32-C6 Standardfrequenz: 160 MHz
+    return (uint32_t)(time_us * 160);
+}
+
+// ============ DATEN-AUSGABE FUNKTIONEN ============
+/**
+ * @brief Schreibt einen Header in die CSV-Ausgabe
+ */
+void write_csv_header(void) {
+    printf("timestamp,test_name,iterations,total_time_us,time_per_op_us,ops_per_second,result_value,cpu_freq_mhz\n");
+}
+
+/**
+ * @brief Schreibt Messdaten in die CSV-Ausgabe
+ * @param test_name Name des Tests
+ * @param total_time Gesamtzeit in Mikrosekunden
+ * @param iterations Anzahl der Iterationen
+ * @param time_per_op Zeit pro Operation in Mikrosekunden
+ * @param ops_per_second Operationen pro Sekunde
+ * @param result_value Ergebniswert der Berechnung
+ */
+void write_measurement_data(const char* test_name, uint64_t total_time, 
+                           int iterations, double time_per_op, 
+                           double ops_per_second, uint32_t result_value) {
     uint64_t timestamp = esp_timer_get_time();
-    printf("%" PRIu64 ",%s,%d,%" PRIu64 ",%.3f,%.0f\n", 
-           timestamp, test_name, iterations, total_time, time_per_op, ops_per_second);
+    uint32_t cpu_freq = 160; // ESP32-C6 Standardfrequenz: 160 MHz
+    
+    printf("%" PRIu64 ",%s,%d,%" PRIu64 ",%.3f,%.0f,%" PRIu32 ",%" PRIu32 "\n", 
+           timestamp, test_name, iterations, total_time, 
+           time_per_op, ops_per_second, result_value, cpu_freq);
 }
 
 // ============ BENCHMARK FUNKTIONEN ============
-void measure_empty_loop(int iterations) {
-    printf("LEERER_SCHLEIFEN_BENCHMARK\n");
+/**
+ * @brief Misst einfache ADDI-Operationen
+ * Demonstriert grundlegende Integer-Arithmetik im RISC-V Befehlssatz
+ */
+void measure_addi_simple(void) {
+    printf("=== EINFACHE ADDI ASSEMBLY MESSUNG ===\n");
     
-    uint64_t start_time = esp_timer_get_time();
+    uint64_t start_time, end_time;
+    uint32_t result = 0;
+    int iterations = 10000; // Statistische Signifikanz durch viele Iterationen
     
-    for (volatile int i = 0; i < iterations; i++) {
-        // Leere Schleife
+    start_time = get_time_us();
+    
+    // ===== ASSEMBLY-BLOCK: Einfache ADDI-Schleife =====
+    __asm__ __volatile__ (
+        "mv a0, %1\n"          // Lade Iterationszähler in Register a0
+        "li a1, 0\n"           // Initialisiere Ergebnisregister a1 mit 0
+        "1:\n"                 // Sprunglabel für Schleifenbeginn
+        "addi a1, a1, 1\n"     // ADDI: Addiere Immediate-Wert 1 zu Register a1
+        "addi a0, a0, -1\n"    // Dekrementiere Iterationszähler
+        "bnez a0, 1b\n"        // Branch if Not Equal Zero: Springe zu Label 1 wenn a0 != 0
+        "mv %0, a1\n"          // Speichere Ergebnis zurück in C-Variable
+        : "=r" (result)        // Output-Operand: Ergebnisvariable
+        : "r" (iterations)     // Input-Operand: Iterationsvariable  
+        : "a0", "a1"          // Clobbered Register: Welche Register verändert werden
+    );
+    // ===== ENDE ASSEMBLY-BLOCK =====
+    
+    end_time = get_time_us();
+    
+    // ===== BEREICHNUNG DER KENNZAHLEN =====
+    uint64_t total_time = end_time - start_time;
+    double time_per_op = (double)total_time / iterations;
+    double ops_per_second = (double)iterations * 1000000 / total_time;
+    uint32_t estimated_cycles = estimate_cycles(total_time);
+    
+    // ===== AUSGABE DER ERGEBNISSE =====
+    printf("ADDI Operationen: %d\n", iterations);
+    printf("Gesamtzeit: %" PRIu64 " us\n", total_time);
+    printf("Geschätzte Zyklen: %" PRIu32 "\n", estimated_cycles);
+    printf("Zeit pro ADDI: %.3f us\n", time_per_op);
+    printf("Operationen pro Sekunde: %.0f\n", ops_per_second);
+    printf("Ergebnis (Verifikation): %" PRIu32 "\n", result);
+    
+    // ===== SPEICHERUNG IN LOG-DATEI =====
+    write_measurement_data("addi_simple", total_time, iterations, 
+                          time_per_op, ops_per_second, result);
+}
+
+/**
+ * @brief Misst mehrere ADDI-Operationen pro Iteration
+ * Zeigt Pipeline-Verhalten bei aufeinanderfolgenden ADDI-Befehlen
+ */
+void measure_multiple_addi(void) {
+    printf("=== MEHRERE ADDI OPERATIONEN PRO ITERATION ===\n");
+    
+    uint64_t start_time, end_time;
+    uint32_t result = 0;
+    int iterations = 2000; // Weniger Iterationen wegen mehr Operationen pro Durchlauf
+    
+    start_time = get_time_us();
+    
+    // ===== ASSEMBLY-BLOCK: Mehrere ADDI-Operationen =====
+    __asm__ __volatile__ (
+        "mv a0, %1\n"          // Iterationszähler
+        "li a1, 0\n"           // Ergebnisregister
+        "1:\n"
+        "addi a1, a1, 1\n"     // ADDI +1
+        "addi a1, a1, 2\n"     // ADDI +2 - Datenabhängigkeit von vorheriger Operation
+        "addi a1, a1, 3\n"     // ADDI +3
+        "addi a1, a1, 4\n"     // ADDI +4  
+        "addi a1, a1, 5\n"     // ADDI +5
+        "addi a0, a0, -1\n"    // Zähler dekrementieren
+        "bnez a0, 1b\n"        // Schleife
+        "mv %0, a1\n"          // Ergebnis zurück
+        : "=r" (result)
+        : "r" (iterations)
+        : "a0", "a1"
+    );
+    // ===== ENDE ASSEMBLY-BLOCK =====
+    
+    end_time = get_time_us();
+    
+    // ===== BEREICHNUNG =====
+    uint64_t total_time = end_time - start_time;
+    int total_addi_ops = iterations * 5; // 5 ADDI pro Iteration
+    double time_per_addi = (double)total_time / total_addi_ops;
+    double ops_per_second = (double)total_addi_ops * 1000000 / total_time;
+    
+    printf("ADDI Operationen: %d\n", total_addi_ops);
+    printf("Gesamtzeit: %" PRIu64 " us\n", total_time);
+    printf("Zeit pro ADDI: %.3f us\n", time_per_addi);
+    printf("Operationen pro Sekunde: %.0f\n", ops_per_second);
+    printf("Ergebnis: %" PRIu32 "\n", result);
+    
+    write_measurement_data("multiple_addi", total_time, total_addi_ops, 
+                          time_per_addi, ops_per_second, result);
+}
+
+/**
+ * @brief Misst ADDI mit verschiedenen Immediate-Werten
+ * Untersucht ob die Größe des Immediate-Werts die Ausführungszeit beeinflusst
+ */
+void measure_addi_values(void) {
+    printf("=== ADDI MIT VERSCHIEDENEN IMMEDIATE-WERTEN ===\n");
+    
+    uint64_t start_time, end_time;
+    uint32_t result = 0;
+    int iterations = 3000;
+    
+    start_time = get_time_us();
+    
+    // ===== ASSEMBLY-BLOCK: Verschiedene ADDI-Werte =====
+    __asm__ __volatile__ (
+        "mv a0, %1\n"          // Iterationszähler
+        "li a1, 0\n"           // Ergebnisregister
+        "1:\n"
+        "addi a1, a1, 1\n"     // Kleiner Wert (1)
+        "addi a1, a1, 100\n"   // Mittlerer Wert (100)
+        "addi a1, a1, 2047\n"  // Maximaler Wert für ADDI (12-bit signed)
+        "addi a1, a1, -1\n"    // Negativer Wert
+        "addi a0, a0, -1\n"    // Zähler dekrementieren
+        "bnez a0, 1b\n"        // Schleife
+        "mv %0, a1\n"          // Ergebnis zurück
+        : "=r" (result)
+        : "r" (iterations)
+        : "a0", "a1"
+    );
+    // ===== ENDE ASSEMBLY-BLOCK =====
+    
+    end_time = get_time_us();
+    
+    // ===== BEREICHNUNG =====
+    uint64_t total_time = end_time - start_time;
+    int total_ops = iterations * 4; // 4 ADDI pro Iteration
+    double time_per_op = (double)total_time / total_ops;
+    double ops_per_second = (double)total_ops * 1000000 / total_time;
+    
+    printf("ADDI Operationen: %d\n", total_ops);
+    printf("Gesamtzeit: %" PRIu64 " us\n", total_time);
+    printf("Zeit pro ADDI: %.3f us\n", time_per_op);
+    printf("Operationen pro Sekunde: %.0f\n", ops_per_second);
+    printf("Ergebnis: %" PRIu32 "\n", result);
+    
+    write_measurement_data("addi_various_values", total_time, total_ops, 
+                          time_per_op, ops_per_second, result);
+}
+
+/**
+ * @brief Referenzmessung mit reiner C-Schleife
+ * Dient als Baseline zum Vergleich mit Assembly-Implementierung
+ */
+void measure_c_reference(void) {
+    printf("=== C-REFERENZMESSUNG (BASELINE) ===\n");
+    
+    uint64_t start_time, end_time;
+    uint32_t result = 0;
+    int iterations = 10000;
+    
+    start_time = get_time_us();
+    
+    // ===== REINE C-IMPLEMENTIERUNG =====
+    for(int i = 0; i < iterations; i++) {
+        result += 1; // Entspricht in etwa einer ADDI-Operation
     }
+    // ===== ENDE C-IMPLEMENTIERUNG =====
     
-    uint64_t end_time = esp_timer_get_time();
+    end_time = get_time_us();
+    
     uint64_t total_time = end_time - start_time;
     double time_per_op = (double)total_time / iterations;
     double ops_per_second = (double)iterations * 1000000 / total_time;
     
-    printf("Iterationen: %d\n", iterations);
+    printf("C-Operationen: %d\n", iterations);
     printf("Gesamtzeit: %" PRIu64 " us\n", total_time);
     printf("Zeit pro Operation: %.3f us\n", time_per_op);
     printf("Operationen pro Sekunde: %.0f\n", ops_per_second);
+    printf("Ergebnis: %" PRIu32 "\n", result);
     
-    print_measurement_data("empty_loop", total_time, iterations, time_per_op, ops_per_second);
-}
-
-void measure_arithmetic_operations(void) {
-    printf("ARITHMETISCHE_OPERATIONEN\n");
-    
-    int a = 123, b = 456, result = 0;
-    int iterations = 100000;
-    
-    // Addition
-    uint64_t start_time = esp_timer_get_time();
-    for (int i = 0; i < iterations; i++) {
-        result = a + b;
-    }
-    uint64_t end_time = esp_timer_get_time();
-    uint64_t total_time = end_time - start_time;
-    
-    printf("Addition: %" PRIu64 " us\n", total_time);
-    print_measurement_data("addition", total_time, iterations, 
-                        (double)total_time / iterations, 
-                        (double)iterations * 1000000 / total_time);
-    
-    // Multiplikation
-    start_time = esp_timer_get_time();
-    for (int i = 0; i < iterations; i++) {
-        result = a * b;
-    }
-    end_time = esp_timer_get_time();
-    total_time = end_time - start_time;
-    
-    printf("Multiplikation: %" PRIu64 " us\n", total_time);
-    print_measurement_data("multiplication", total_time, iterations, 
-                        (double)total_time / iterations, 
-                        (double)iterations * 1000000 / total_time);
-    
-    // Division
-    start_time = esp_timer_get_time();
-    for (int i = 0; i < iterations; i++) {
-        result = a / (b + 1);
-    }
-    end_time = esp_timer_get_time();
-    total_time = end_time - start_time;
-    
-    printf("Division: %" PRIu64 " us\n", total_time);
-    print_measurement_data("division", total_time, iterations, 
-                        (double)total_time / iterations, 
-                        (double)iterations * 1000000 / total_time);
-    
-    printf("Ergebnis: %d\n", result);
-}
-
-void measure_memory_access(void) {
-    printf("SPEICHER_ZUGRIFFS_MUSTER\n");
-    
-    #define ARRAY_SIZE 100
-    int array[ARRAY_SIZE];
-    int iterations = 10000;
-    int sum = 0;
-    
-    for (int i = 0; i < ARRAY_SIZE; i++) {
-        array[i] = i;
-    }
-    
-    // Sequentielle Zugriffe
-    uint64_t start_time = esp_timer_get_time();
-    for (int i = 0; i < iterations; i++) {
-        sum += array[i % ARRAY_SIZE];
-    }
-    uint64_t end_time = esp_timer_get_time();
-    uint64_t total_time = end_time - start_time;
-    
-    printf("Sequentielle Zugriffe: %" PRIu64 " us\n", total_time);
-    print_measurement_data("sequential_access", total_time, iterations, 
-                        (double)total_time / iterations, 
-                        (double)iterations * 1000000 / total_time);
-    
-    printf("Summe: %d\n", sum);
-}
-
-void measure_floating_point(void) {
-    printf("GLEITKOMMA_OPERATIONEN\n");
-    
-    float a = 123.456f, b = 789.012f, result = 0.0f;
-    int iterations = 50000;
-    
-    // Float Addition
-    uint64_t start_time = esp_timer_get_time();
-    for (int i = 0; i < iterations; i++) {
-        result = a + b;
-    }
-    uint64_t end_time = esp_timer_get_time();
-    uint64_t total_time = end_time - start_time;
-    
-    printf("Float Addition: %" PRIu64 " us\n", total_time);
-    print_measurement_data("float_addition", total_time, iterations, 
-                        (double)total_time / iterations, 
-                        (double)iterations * 1000000 / total_time);
-    
-    // Float Multiplikation
-    start_time = esp_timer_get_time();
-    for (int i = 0; i < iterations; i++) {
-        result = a * b;
-    }
-    end_time = esp_timer_get_time();
-    total_time = end_time - start_time;
-    
-    printf("Float Multiplikation: %" PRIu64 " us\n", total_time);
-    print_measurement_data("float_multiplication", total_time, iterations, 
-                        (double)total_time / iterations, 
-                        (double)iterations * 1000000 / total_time);
-    
-    printf("Ergebnis: %.3f\n", result);
-}
-
-// ============ TIMER MESSUNGEN ============
-static volatile uint32_t timer_callback_count = 0;
-
-void IRAM_ATTR timer_callback(void* arg) {
-    timer_callback_count++;
-}
-
-void measure_timer_performance(void) {
-    printf("TIMER_LEISTUNGSMESSUNG\n");
-    
-    esp_timer_handle_t periodic_timer;
-    const esp_timer_create_args_t timer_args = {
-        .callback = &timer_callback,
-        .name = "performance_timer"
-    };
-    
-    esp_err_t ret = esp_timer_create(&timer_args, &periodic_timer);
-    if (ret != ESP_OK) {
-        printf("Timer Erstellung fehlgeschlagen\n");
-        return;
-    }
-    
-    timer_callback_count = 0;
-    uint64_t start_time = esp_timer_get_time();
-    
-    ret = esp_timer_start_periodic(periodic_timer, 100000);
-    if (ret != ESP_OK) {
-        printf("Timer Start fehlgeschlagen\n");
-        esp_timer_delete(periodic_timer);
-        return;
-    }
-    
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    
-    uint64_t end_time = esp_timer_get_time();
-    esp_timer_stop(periodic_timer);
-    esp_timer_delete(periodic_timer);
-    
-    uint64_t total_time = end_time - start_time;
-    
-    printf("Timer-Callbacks: %" PRIu32 "\n", timer_callback_count);
-    printf("Tatsaechliche Zeit: %" PRIu64 " us\n", total_time);
-    
-    print_measurement_data("timer_performance", total_time, timer_callback_count, 
-                         (double)total_time / timer_callback_count, 
-                         (double)timer_callback_count * 1000000 / total_time);
-}
-
-void measure_function_call_overhead(void) {
-    printf("FUNKTIONS_AUFRUF_OVERHEAD\n");
-    
-    int iterations = 100000;
-    
-    uint64_t start_time = esp_timer_get_time();
-    
-    for (int i = 0; i < iterations; i++) {
-        esp_timer_get_time();
-    }
-    
-    uint64_t end_time = esp_timer_get_time();
-    uint64_t total_time = end_time - start_time;
-    double time_per_call = (double)total_time / iterations;
-    
-    printf("Funktionsaufrufe: %d\n", iterations);
-    printf("Gesamtzeit: %" PRIu64 " us\n", total_time);
-    printf("Zeit pro Funktionsaufruf: %.3f us\n", time_per_call);
-    
-    print_measurement_data("function_call", total_time, iterations, time_per_call, 
-                        (double)iterations * 1000000 / total_time);
-}
-
-// ============ SCHLAFMODUS TEST ============
-void measure_sleep_modes(void) {
-    printf("SCHLAFMODUS_TEST\n");
-    
-    printf("Aktiver Modus - 1 Sekunde\n");
-    uint64_t active_start = esp_timer_get_time();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    uint64_t active_end = esp_timer_get_time();
-    
-    printf("Aktiver Modus Zeit: %" PRIu64 " us\n", active_end - active_start);
-    
-    printf("Light Sleep - 500ms\n");
-    esp_sleep_enable_timer_wakeup(500000);
-    uint64_t sleep_start = esp_timer_get_time();
-    esp_light_sleep_start();
-    uint64_t sleep_end = esp_timer_get_time();
-    
-    printf("Light Sleep Zeit: %" PRIu64 " us\n", sleep_end - sleep_start);
-    
-    print_measurement_data("light_sleep", sleep_end - sleep_start, 1, 
-                         (double)(sleep_end - sleep_start), 0);
-}
-
-// ============ KOMPLETTER BENCHMARK ============
-void run_complete_benchmark(void) {
-    printf("BEGIN_BENCHMARK_SUITE\n");
-    printf("ESP32_C6_BENCHMARK_DATA\n");
-    printf("Compile_Time: %s %s\n", __DATE__, __TIME__);
-    
-    print_csv_header();
-    
-    measure_empty_loop(1000000);
-    measure_arithmetic_operations();
-    measure_memory_access();
-    measure_floating_point();
-    measure_function_call_overhead();
-    measure_timer_performance();
-    measure_sleep_modes();
-    
-    printf("END_BENCHMARK_SUITE\n");
-    printf("BENCHMARK_ABGESCHLOSSEN\n");
+    write_measurement_data("c_reference", total_time, iterations, 
+                          time_per_op, ops_per_second, result);
 }
 
 // ============ HAUPTPROGRAMM ============
+/**
+ * @brief Hauptfunktion - Führt alle Benchmarks aus
+ * Wichtige Punkte für die BA:
+ * - Systeminitialisierung
+ * - Warm-up Phase für stabilere Ergebnisse
+ * - Wiederholte Messungen für statistische Aussagekraft
+ */
 void app_main(void) {
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    // ===== SYSTEMINITIALISIERUNG =====
+    printf("\n");
+    printf("===============================================\n");
+    printf("ESP32-C6 RISC-V ADDI BENCHMARK SUITE\n");
+    printf("Bachelorarbeit - Mikroarchitektur-Analyse\n");
+    printf("===============================================\n");
     
-    printf("ESP32_C6_BENCHMARK_START\n");
-    printf("Chip_Revision: v0.1\n");
-    printf("CPU_Frequency: 160 MHz\n");
-    printf("ESP_IDF_Version: v5.5\n");
+    // Kurze Verzögerung für stabile Serial-Ausgabe
+    vTaskDelay(pdMS_TO_TICKS(2000));
     
-    run_complete_benchmark();
+    // ===== SYSTEMINFORMATIONEN =====
+    printf("Systeminformationen:\n");
+    printf("CPU: RISC-V RV32IMC\n");
+    printf("Frequenz: 160 MHz\n");
+    printf("Compile Time: %s %s\n", __DATE__, __TIME__);
     
-    int cycle_count = 0;
-    while (1) {
-        cycle_count++;
-        printf("CYCLE_RESTART_%d\n", cycle_count);
-        vTaskDelay(pdMS_TO_TICKS(30000));
-        run_complete_benchmark();
+    write_csv_header();
+    
+    // ===== WARM-UP PHASE =====
+    printf("\n=== WARM-UP PHASE ===\n");
+    measure_c_reference(); // Erster Durchlauf als Warm-up
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    int test_cycle = 0;
+    
+    // ===== HAUPTSCHLEIFE FÜR WIEDERHOLTE MESSUNGEN =====
+    while(1) {
+        test_cycle++;
+        printf("\n");
+        printf("=== MESSZYKLUS %d ===\n", test_cycle);
+        printf("=====================\n");
+        
+        // ===== TESTSEQUENZ =====
+        measure_c_reference();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        measure_addi_simple();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        measure_multiple_addi();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        measure_addi_values();
+        
+        // ===== ZWISCHENPAUSE =====
+        printf("\n--- Ende Zyklus %d - Warte 5 Sekunden ---\n", test_cycle);
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        
+        // Sicherheitsabbruch nach vielen Zyklen
+        if (test_cycle >= 10) {
+            printf("\n=== BENCHMARK BEENDET NACH 10 ZYKLEN ===\n");
+            break;
+        }
+    }
+    
+    // ===== ABSCHLUSS =====
+    printf("\n===============================================\n");
+    printf("BENCHMARK ABGESCHLOSSEN\n");
+    printf("Gesamte Messzyklen: %d\n", test_cycle);
+    printf("Daten wurden im CSV-Format ausgegeben\n");
+    printf("===============================================\n");
+    
+    // Endlosschleife um System am Laufen zu halten
+    while(1) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

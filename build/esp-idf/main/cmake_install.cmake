@@ -1,4 +1,4 @@
-# Install script for directory: /home/olisinka/test/main
+# Install script for directory: /home/olisinka/BA/esp32c6-timing-analysis-1/main
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
