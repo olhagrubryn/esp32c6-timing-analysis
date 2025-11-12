@@ -35,13 +35,21 @@ This project implements precise timing measurements for RISC-V assembly instruct
 ### Building and Flashing
 
 ```bash
+
 # Clone the repository
 git clone <your-repository>
 cd esp32c6-timing-analysis
 
 # Configure the project
 idf.py set-target esp32c6
+#=========================================
+# Complete workflow (recommended)
+source ~/esp/esp-idf/export.sh
+./build.sh
 
+
+#=========================================
+# Alternative manual workflow
 # Build and flash
 idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
