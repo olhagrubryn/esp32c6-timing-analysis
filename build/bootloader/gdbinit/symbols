@@ -17,4 +17,4 @@ set confirm off
 set confirm on
 
 # Load application symbols
-file /home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/bootloader.elf
+file /home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader/bootloader.elf

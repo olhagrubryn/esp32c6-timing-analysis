@@ -2,34 +2,34 @@
 	"sources" : 
 	[
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/CMakeFiles/bootloader"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/CMakeFiles/bootloader"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/CMakeFiles/bootloader.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/CMakeFiles/bootloader.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/CMakeFiles/bootloader-complete.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/CMakeFiles/bootloader-complete.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
 		},
 		{
-			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+			"file" : "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
 		}
 	],
 	"target" : 

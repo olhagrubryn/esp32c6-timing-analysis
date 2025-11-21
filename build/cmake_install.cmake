@@ -1,4 +1,4 @@
-# Install script for directory: /home/olisinka/BA/esp32c6-timing-analysis-1
+# Install script for directory: /home/olisinka/BA/esp32c6-timing-analysis-1-backup
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -38,9 +38,8 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for each subdirectory.
-  include("/home/olisinka/BA/esp32c6-timing-analysis-1/build/esp-idf/cmake_install.cmake")
-
+  # Include the install script for the subdirectory.
+  include("/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/esp-idf/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -51,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/olisinka/BA/esp32c6-timing-analysis-1/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
