@@ -33,19 +33,21 @@ FORCE_INLINE_ATTR IRAM_ATTR uint32_t measure_isolated_add(void)
 
     ENTER_CRITICAL();
 
-    start = get_hardware_cycle_count();
-
     __asm__ __volatile__ (
-        "add %0, %1, %2\n"
-        : "=r"(r)
+        "fence\n"               // 1. Pipeline leeren (Sicherstellen, dass alles Vorherige fertig ist)
+        "csrr %1, 0x7E2\n"      // 2. Start-Zeit (CSR-Read)
+        "add  %0, %3, %4\n"     // 3. DER BEFEHL (Genau eine Instruktion)
+        "csrr %2, 0x7E2\n"      // 4. End-Zeit (CSR-Read)
+        "fence\n"               // 5. Sicherstellen, dass CSR-Read fertig ist
+        : "=r"(r), "=r"(start), "=r"(end)
         : "r"(a), "r"(b)
+        : "memory"
     );
 
-    end = get_hardware_cycle_count();
-
     EXIT_CRITICAL();
-
-    return end - start;
+    printf("Start: %" PRIu32 "\n", start);
+    printf("Ende: %" PRIu32 "\n", end);
+    return end - start - 1;
 }
 
 // Hauptfunktion
@@ -54,6 +56,7 @@ void app_main(void)
     init_performance_counters();
 
     for (int i = 0; i < 10; i++) {
+        init_performance_counters();
         uint32_t c = measure_isolated_add();
         printf("isolierte ADD: %" PRIu32 " Zyklen\n", c);
     }
