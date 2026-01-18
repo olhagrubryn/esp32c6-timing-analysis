@@ -3,7 +3,19 @@
 #include "freertos/task.h"
 #include "esp_attr.h"
 #include <inttypes.h>
-
+/*
+ERKLÄRUNG DER MESSUNG(warum nur ein Zyklus):
+Zyklus | IF (Fetch)    | ID (Decode)    | EX (Execute)   | WB (Writeback)  | Bemerkung
+-------|---------------|----------------|----------------|----------------|------------------
+   1   | fence         | -              | -              | -              | Pipeline-Flush
+   2   | csrr (start)  | fence          | -              | -              | 
+   3   | add           | csrr (start)   | fence          | -              | csrr start in EX
+   4   | csrr (end)    | add            | csrr (start)   | fence          | csrr start gibt Wert zurück
+   5   | -             | csrr (end)     | add            | csrr (start)   | add in EX (Berechnung!)
+   6   | -             | -              | csrr (end)     | add            | csrr end gibt Wert zurück
+   7   | fence         | -              | -              | csrr (end)     | 
+   8   | -             | fence          | -              | -              | Letzter fence
+*/
 // Hardware-Zykluszähler
 static inline void init_performance_counters(void) {
     __asm__ __volatile__ (
