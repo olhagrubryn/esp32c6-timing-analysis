@@ -24,7 +24,7 @@ FORCE_INLINE_ATTR IRAM_ATTR uint32_t measure_latency_chain(void) {
         : "=r"(start), "=r"(end), "+r"(a) :: "memory"
     );
     portEXIT_CRITICAL(&measureMux);
-    return (end - start);
+    return (end - start) -1;
 }
 
 // 2. DURCHSATZ-KETTE (Unabhängig: Befehle können theoretisch parallel/überlappend)
@@ -42,13 +42,13 @@ FORCE_INLINE_ATTR IRAM_ATTR uint32_t measure_throughput_chain(void) {
         : "=r"(start), "=r"(end), "+r"(t1), "+r"(t2), "+r"(t3) :: "memory"
     );
     portEXIT_CRITICAL(&measureMux);
-    return (end - start);
+    return (end - start) - 1 ;
 }
 
-// 3. LOAD-LATENZ (Sicher gegen Absturz)
 FORCE_INLINE_ATTR IRAM_ATTR uint32_t measure_load_latency(void) {
     uint32_t start, end;
-    static volatile uint32_t data = 42; // static volatile verhindert Optimierung und Stack-Fehler
+    // Verwende "aligned" Attribute um Ausrichtung sicherzustellen
+    static volatile uint32_t __attribute__((aligned(4))) data = 42;
     volatile uint32_t *ptr = &data;
     uint32_t val;
 
@@ -59,14 +59,13 @@ FORCE_INLINE_ATTR IRAM_ATTR uint32_t measure_load_latency(void) {
         ".rept 10\n lw %2, 0(%3)\n .endr\n"
         "csrr %1, 0x7E2\n"
         "fence\n"
-        : "=r"(start), "=r"(end), "=r"(val)
+        : "=r"(start), "=r"(end), "=&r"(val)  // "=&r" = early-clobber
         : "r"(ptr)
         : "memory"
     );
     portEXIT_CRITICAL(&measureMux);
-    return (end - start);
+    return (end - start) - 1;
 }
-
 void app_main(void) {
     init_performance_counters();
     printf("\n--- KALIBRIERTE MESSUNG ---\n");
