@@ -4,12 +4,6 @@
 #include "freertos/task.h"
 #include "performance_counter.h"
 
-// Function declarations from both files
-uint32_t measure_complex_dependencies(void);
-uint32_t measure_load_latency_stack(void);
-uint32_t measure_mixed_alu_ops(void);
-uint32_t measure_branch_penalty(void);
-
 void run_simple_alu_test(void) {
     printf("\n=== ESP32-C6 ALU Performance Test ===\n");
     
@@ -25,30 +19,47 @@ void run_simple_alu_test(void) {
     const int NUM_RUNS = 5;
     uint32_t latency_sum = 0, throughput_sum = 0;
     uint32_t complex_sum = 0, mixed_sum = 0, branch_sum = 0;
+    uint32_t add_lat_sum = 0, move_elim_sum = 0, load_dep_sum = 0, bypass_sum = 0;
     
     for (int run = 0; run < NUM_RUNS; run++) {
         printf("\n--- Run %d/%d ---\n", run + 1, NUM_RUNS);
         
+        // Bestehende Tests
         uint32_t latency = measure_latency_chain();
         uint32_t throughput = measure_throughput_chain();
         uint32_t complex = measure_complex_dependencies();
         uint32_t mixed = measure_mixed_alu_ops();
         uint32_t branch = measure_branch_penalty();
         
+        // Neue Tests
+        uint32_t add_lat = measure_add_latency();
+        uint32_t move_elim = test_move_elimination();
+        uint32_t load_dep = measure_load_latency_dependent();
+        uint32_t bypass = test_bypass_delay();
+        
         printf("Basic Measurements:\n");
         printf("  ADD Latency (10x):      %" PRIu32 " cycles\n", latency);
         printf("  ADD Throughput (10x):   %" PRIu32 " cycles\n", throughput);
+        printf("  ADD Detailed Latency:   %.2f cycles/op\n", add_lat / 1.0f);
         
         printf("Advanced Analysis:\n");
         printf("  Complex Dep. (30x):     %" PRIu32 " cycles\n", complex);
         printf("  Mixed ALU Ops (10x):    %" PRIu32 " cycles\n", mixed);
         printf("  Branch Penalty (10x):   %" PRIu32 " cycles\n", branch);
+        printf("  Move Elimination:       %.2f cycles/op\n", move_elim / 1.0f);
+        printf("  Load Dep. Latency:      %.2f cycles/op\n", load_dep / 1.0f);
+        printf("  Bypass Delay:           %.2f cycles/op\n", bypass / 1.0f);
         
+        // Summen
         latency_sum += latency;
         throughput_sum += throughput;
         complex_sum += complex;
         mixed_sum += mixed;
         branch_sum += branch;
+        add_lat_sum += add_lat;
+        move_elim_sum += move_elim;
+        load_dep_sum += load_dep;
+        bypass_sum += bypass;
         
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -60,9 +71,16 @@ void run_simple_alu_test(void) {
     float avg_throughput = throughput_sum / (float)NUM_RUNS;
     
     printf("\nPer Operation Analysis:\n");
-    printf("  ADD Latency:          %.2f cycles/op\n", avg_latency / 10.0f);
-    printf("  ADD Throughput:       %.2f cycles/op\n", avg_throughput / 10.0f);
-    printf("  Latency/Throughput:   %.2f (ideal > 1.0)\n", avg_latency / avg_throughput);
+    printf("  ADD Latency (10x):     %.2f cycles/op\n", avg_latency / 10.0f);
+    printf("  ADD Throughput (10x):  %.2f cycles/op\n", avg_throughput / 10.0f);
+    printf("  ADD Detailed:          %.2f cycles/op\n", add_lat_sum / (float)NUM_RUNS);
+    printf("  Move Elimination:      %.2f cycles/op\n", move_elim_sum / (float)NUM_RUNS);
+    printf("  Load Dependent:        %.2f cycles/op\n", load_dep_sum / (float)NUM_RUNS);
+    printf("  Bypass Delay:          %.2f cycles/op\n", bypass_sum / (float)NUM_RUNS);
+    printf("  Latency/Throughput:    %.2f (ideal > 1.0)\n", avg_latency / avg_throughput);
+    
+    // Zero Idioms Test (einmalig)
+    test_zero_idioms();
 }
 
 void run_load_test_separately(void) {
@@ -101,7 +119,7 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(500));
     init_performance_counters();
 
-    // Führe den ALU-Test durch
+    // Führe alle Tests durch
     run_simple_alu_test();
     
     // Optional: Load-Test
