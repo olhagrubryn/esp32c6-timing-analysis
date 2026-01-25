@@ -3,7 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "performance_counter.h"
-
+/*
 void run_simple_alu_test(void) {
     printf("\n=== ESP32-C6 ALU Performance Test ===\n");
     
@@ -111,8 +111,9 @@ void run_load_test_separately(void) {
         printf("\nAverage load latency: %.2f cycles/load\n", avg_load / 10.0f);
     }
 }
-
+*/
 void app_main(void) {
+    /*
     printf("\nStarting ESP32-C6 Performance Analysis\n");
     printf("======================================\n");
     
@@ -126,4 +127,14 @@ void app_main(void) {
     run_load_test_separately();
     
     printf("\n=== ANALYSIS COMPLETE ===\n");
+    */
+    printf("Starting ESP32-C6 Latency Analysis...\n");
+    
+    // Initialize
+    init_performance_counters();
+    
+    // Run complete analysis
+    run_complete_latency_analysis();
+    
+    printf("\nDone!\n");
 }
