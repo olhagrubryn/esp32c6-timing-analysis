@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS 
+        "add_test.c"
+        "sub_test.c"
+        "and_test.c"
+        "collector.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        freertos
+)
