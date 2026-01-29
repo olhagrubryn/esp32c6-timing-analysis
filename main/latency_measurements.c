@@ -25,7 +25,7 @@ void init_performance_counters(void) {
  * @brief Simple dependency chain - measures RAW hazard penalty
  * @return Cycles per instruction in dependency chain
  */
-IRAM_ATTR uint32_t measure_dependency_chain(void) {
+IRAM_ATTR float measure_dependency_chain(void) {
     uint32_t start, end;
     register uint32_t a __asm__("t1") = 1;
     
@@ -44,7 +44,7 @@ IRAM_ATTR uint32_t measure_dependency_chain(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 3;  // 3 dependencies between 4 instructions
+    return (float)(end - start) / 4.0f;  // 3 dependencies between 4 instructions
 }
 
 // ============================================================================
@@ -55,7 +55,7 @@ IRAM_ATTR uint32_t measure_dependency_chain(void) {
  * @brief Register-to-register ADD latency with different registers
  * @return Latency per ADD instruction
  */
-IRAM_ATTR uint32_t measure_reg_to_reg_latency(void) {
+IRAM_ATTR float measure_reg_to_reg_latency(void) {
     uint32_t start, end;
     register uint32_t a __asm__("t1") = 1;
     register uint32_t b __asm__("t2") = 2;
@@ -75,14 +75,14 @@ IRAM_ATTR uint32_t measure_reg_to_reg_latency(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 2;  // 2 true dependencies
+    return (float)(end - start) / 3.0f;  // 2 true dependencies
 }
 
 /**
  * @brief Test move operations (RISC-V: ADD with zero register)
  * @return Latency per move operation
  */
-IRAM_ATTR uint32_t measure_move_latency(void) {
+IRAM_ATTR float measure_move_latency(void) {
     uint32_t start, end;
     register uint32_t src __asm__("t1") = 0x12345678;
     register uint32_t dst __asm__("t2") = 0;
@@ -102,7 +102,7 @@ IRAM_ATTR uint32_t measure_move_latency(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 4;
+    return (float)(end - start) / 4.0f;
 }
 
 // ============================================================================
@@ -113,7 +113,7 @@ IRAM_ATTR uint32_t measure_move_latency(void) {
  * @brief Load latency from L1 cache (stack variable)
  * @return Cycles per load operation
  */
-IRAM_ATTR uint32_t measure_load_latency_l1(void) {
+IRAM_ATTR float measure_load_latency_l1(void) {
     uint32_t start, end;
     volatile uint32_t data __attribute__((aligned(4))) = 0xDEADBEEF;
     register uint32_t result;
@@ -134,14 +134,14 @@ IRAM_ATTR uint32_t measure_load_latency_l1(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 4;
+    return (float)(end - start) / 4.0f;
 }
 
 /**
  * @brief Load-use dependency chain (KORRIGIERT)
  * @return Latency for load followed by dependent operation
  */
-IRAM_ATTR uint32_t measure_load_use_chain(void) {
+IRAM_ATTR float measure_load_use_chain(void) {
     uint32_t start, end;
     static volatile uint32_t array[4] __attribute__((aligned(4))) = {1, 2, 3, 4};
     register uint32_t sum __asm__("t1") = 0;
@@ -163,7 +163,7 @@ IRAM_ATTR uint32_t measure_load_use_chain(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 2;  // 2 load-use pairs
+    return (float)(end - start) / 4.0f;  // 2 load-use pairs
 }
 
 // ============================================================================
@@ -174,7 +174,7 @@ IRAM_ATTR uint32_t measure_load_use_chain(void) {
  * @brief Conditional branch latency (RISC-V equivalent to status flags)
  * @return Cycles per conditional branch decision
  */
-IRAM_ATTR uint32_t measure_branch_decision_latency(void) {
+IRAM_ATTR float measure_branch_decision_latency(void) {
     uint32_t start, end;
     register uint32_t a __asm__("t1") = 1;
     register uint32_t b __asm__("t2") = 2;
@@ -195,7 +195,7 @@ IRAM_ATTR uint32_t measure_branch_decision_latency(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 2;
+    return (float)(end - start) / 4.0f;
 }
 
 // ============================================================================
@@ -206,7 +206,7 @@ IRAM_ATTR uint32_t measure_branch_decision_latency(void) {
  * @brief Store-forwarding latency test
  * @return Combined store+load latency
  */
-IRAM_ATTR uint32_t measure_store_forwarding_latency(void) {
+IRAM_ATTR float measure_store_forwarding_latency(void) {
     uint32_t start, end;
     static volatile uint32_t memory __attribute__((aligned(4))) = 0;
     register uint32_t value __asm__("t1") = 0x12345678;
@@ -228,7 +228,7 @@ IRAM_ATTR uint32_t measure_store_forwarding_latency(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return (end - start) / 4;  // 4 operations total
+    return (float)(end - start) / 4.0f;  // 4 operations total
 }
 
 // ============================================================================
@@ -239,7 +239,7 @@ IRAM_ATTR uint32_t measure_store_forwarding_latency(void) {
  * @brief Division latency with fast inputs (power of two)
  * @return Cycles per division (optimistic case)
  */
-IRAM_ATTR uint32_t measure_div_latency_fast(void) {
+IRAM_ATTR float measure_div_latency_fast(void) {
     uint32_t start, end;
     register uint32_t dividend __asm__("t1") = 1024;  // 2^10
     register uint32_t divisor __asm__("t2") = 2;      // Power of two
@@ -258,14 +258,14 @@ IRAM_ATTR uint32_t measure_div_latency_fast(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return end - start;
+    return (float)(end - start);
 }
 
 /**
  * @brief Division latency with slow inputs (prime numbers)
  * @return Cycles per division (pessimistic case)
  */
-IRAM_ATTR uint32_t measure_div_latency_slow(void) {
+IRAM_ATTR float measure_div_latency_slow(void) {
     uint32_t start, end;
     register uint32_t dividend __asm__("t1") = 1234567;  // Prime-ish
     register uint32_t divisor __asm__("t2") = 17;        // Prime
@@ -284,7 +284,7 @@ IRAM_ATTR uint32_t measure_div_latency_slow(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    return end - start;
+    return (float)(end - start);
 }
 
 // ============================================================================
@@ -333,10 +333,10 @@ IRAM_ATTR void measure_memory_hierarchy(void) {
     );
     portEXIT_CRITICAL(&measureMux);
     
-    printf("  L1 Cache: %" PRIu32 " cycles\n", l1_time);
-    printf("  Memory:   %" PRIu32 " cycles\n", mem_time);
+    printf("  L1 Cache: %.2f cycles\n", (float)l1_time);
+    printf("  Memory:   %.2f cycles\n", (float)mem_time);
     if (l1_time > 0) {
-        printf("  Ratio:    %.1fx slower\n", (float)mem_time / l1_time);
+        printf("  Ratio:    %.2fx slower\n", (float)mem_time / (float)l1_time);
     }
 }
 
@@ -354,41 +354,41 @@ void run_complete_latency_analysis(void) {
     
     // 1. Dependency Chains
     printf("\n1. DEPENDENCY CHAINS (RAW Hazards):\n");
-    uint32_t dep = measure_dependency_chain();
-    printf("  ADD chain latency: %" PRIu32 " cycles/instruction\n", dep);
+    float dep = measure_dependency_chain();
+    printf("  ADD chain latency: %.2f cycles/instruction\n", dep);
     
     // 2. Register to Register
     printf("\n2. REGISTER TO REGISTER LATENCY:\n");
-    uint32_t reg_reg = measure_reg_to_reg_latency();
-    uint32_t move = measure_move_latency();
-    printf("  ADD latency: %" PRIu32 " cycles\n", reg_reg);
-    printf("  MOVE latency: %" PRIu32 " cycles\n", move);
+    float reg_reg = measure_reg_to_reg_latency();
+    float move = measure_move_latency();
+    printf("  ADD latency: %.2f cycles\n", reg_reg);
+    printf("  MOVE latency: %.2f cycles\n", move);
     
     // 3. Memory to Register
     printf("\n3. MEMORY TO REGISTER (Load Latency):\n");
-    uint32_t load_l1 = measure_load_latency_l1();
-    uint32_t load_use = measure_load_use_chain();
-    printf("  L1 Load: %" PRIu32 " cycles\n", load_l1);
-    printf("  Load-Use: %" PRIu32 " cycles\n", load_use);
+    float load_l1 = measure_load_latency_l1();
+    float load_use = measure_load_use_chain();
+    printf("  L1 Load: %.2f cycles\n", load_l1);
+    printf("  Load-Use: %.2f cycles\n", load_use);
     
     // 4. Conditional Branches (RISC-V)
     printf("\n4. CONDITIONAL BRANCHES (RISC-V Status Flags Equivalent):\n");
-    uint32_t branch = measure_branch_decision_latency();
-    printf("  Branch decision: %" PRIu32 " cycles\n", branch);
+    float branch = measure_branch_decision_latency();
+    printf("  Branch decision: %.2f cycles\n", branch);
     
     // 5. Register to Memory
     printf("\n5. REGISTER TO MEMORY (Store Latency):\n");
-    uint32_t store_fwd = measure_store_forwarding_latency();
-    printf("  Store+Load (forwarding): %" PRIu32 " cycles/pair\n", store_fwd);
+    float store_fwd = measure_store_forwarding_latency();
+    printf("  Store+Load (forwarding): %.2f cycles/pair\n", store_fwd);
     
     // 6. Divisions
     printf("\n6. DIVISIONS (Variable Latency):\n");
-    uint32_t div_fast = measure_div_latency_fast();
-    uint32_t div_slow = measure_div_latency_slow();
-    printf("  Fast case (power of two): %" PRIu32 " cycles\n", div_fast);
-    printf("  Slow case (primes): %" PRIu32 " cycles\n", div_slow);
+    float div_fast = measure_div_latency_fast();
+    float div_slow = measure_div_latency_slow();
+    printf("  Fast case (power of two): %.2f cycles\n", div_fast);
+    printf("  Slow case (primes): %.2f cycles\n", div_slow);
     if (div_fast > 0) {
-        printf("  Variability: %.1fx\n", (float)div_slow / div_fast);
+        printf("  Variability: %.2fx\n", div_slow / div_fast);
     }
     
     // Bonus: Memory Hierarchy
