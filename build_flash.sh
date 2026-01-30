@@ -1,5 +1,7 @@
 #!/bin/bash
 # build_flash.sh
+#chmod +x build_flash.sh
+#./build_flash.sh
 
 # Konfiguration
 PROJECT_DIR="$(pwd)"
