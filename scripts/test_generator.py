@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-# esp32c6_latency_test_generator_final.py - Korrigierte Version mit richtigem Assembler
+# esp32c6_latency_test_generator_final.py - Fixed version with correct assembler
 
 import os
 import shutil
 
 # ============================================================================
-# 1. GENERATOR-KLASSEN
+# 1. GENERATOR CLASSES
 # ============================================================================
 
 class LatencyTestGenerator:
-    """Basisklasse für Latency-Test-Generierung."""
+    """Base class for latency test generation."""
     
     @staticmethod
     def generate_register_to_register_tests():
@@ -217,20 +217,18 @@ class LatencyTestGenerator:
         return test_groups
 
 # ============================================================================
-# 2. KORRIGIERTE TEMPLATES MIT RICHTIGEM ASSEMBLER
+# 2. TEMPLATES  ASSEMBLER
 # ============================================================================
 
-# The key fix here is using C string literal concatenation: "line1\n" "line2\n"
-# 1. Das korrigierte Template für die Test-Funktionen
-TEST_FUNCTION_TEMPLATE = """uint32_t {test_name}(void) {{
-    uint32_t start, end;
-    uint32_t total_cycles = 0;
+TEST_FUNCTION_TEMPLATE = """float {test_name}(void) {{
+    float start, end;
+    float total_cycles = 0;
     
-    // Sicherer Puffer im RAM (16 Words), damit wir keine Access Faults bekommen
+    // Safe buffer in RAM (16 words) to avoid access faults
     static uint32_t safe_buffer[16] __attribute__((aligned(16)));
     uint32_t *ptr = safe_buffer;
     
-    // Initialwerte für Register-Tests
+    // Initial values for register tests
     uint32_t r3_val = 0x12345678;
     uint32_t r4_val = 0x87654321;
     uint32_t r5_val = 0xABCDEF01;
@@ -239,24 +237,27 @@ TEST_FUNCTION_TEMPLATE = """uint32_t {test_name}(void) {{
     portENTER_CRITICAL(&test_mutex);
     
     for (int iter = 0; iter < {iterations}; iter++) {{
+        uint32_t t_start, t_end;
         __asm__ __volatile__ (
-            "mv a3, %[mem_ptr]\\n"   // Lade die sichere RAM-Adresse in a3
-            "mv a4, %[mem_ptr]\\n"   // Auch in a4 (für Offsets)
-            "mv a5, %[mem_ptr]\\n"   // Auch in a5
+            "mv a3, %[mem_ptr]\\n"   // Load safe RAM address into a3
+            "mv a4, %[mem_ptr]\\n"   // Also into a4 (for offsets)
+            "mv a5, %[mem_ptr]\\n"   // Also into a5
             "fence\\n"               // Memory Barrier
-            "csrr %[t_start], 0x7E2\\n" // Start-Zyklus lesen
+            "csrr %[t_start], 0x7E2\\n" // Read start cycle
 {instruction_block}
-            "csrr %[t_end], 0x7E2\\n"   // End-Zyklus lesen
+            "csrr %[t_end], 0x7E2\\n"   // Read end cycle
             "fence\\n"
-            : [t_start] "=r"(start), [t_end] "=r"(end)
+            : [t_start] "=r"(t_start), [t_end] "=r"(t_end)
             : [mem_ptr] "r"(ptr), "r"(r3_val), "r"(r4_val), "r"(r5_val), "r"(r6_val)
             : "a2", "a3", "a4", "a5", "a6", "memory"
         );
+        start = (float)t_start;
+        end = (float)t_end;
         total_cycles += (end - start);
     }}
     
     portEXIT_CRITICAL(&test_mutex);
-    return total_cycles / {iterations};
+    return total_cycles / (float){iterations};
 }}
 """
 
@@ -268,13 +269,13 @@ HEADER_TEMPLATE = """#ifndef ESP32C6_LATENCY_TESTS_H
 
 extern portMUX_TYPE test_mutex;
 
-// Initialisierung
+// Initialization
 void init_performance_counters(void);
 
-// Test-Funktionen Deklarationen
+// Test function declarations
 {function_declarations}
 
-// Test-Runner
+// Test runner
 void run_all_latency_tests(void);
 void print_csv_results(void);
 void print_detailed_results(void);
@@ -303,12 +304,12 @@ void init_performance_counters(void) {{
 {test_functions}
 
 // ============================================================================
-// TEST DEFINITIONEN UND RUNNER
+// TEST DEFINITIONS AND RUNNER
 // ============================================================================
 
 typedef struct {{
     const char* name;
-    uint32_t (*function)(void);
+    float (*function)(void);
     uint32_t iterations;
     uint32_t instruction_count;
     const char* description;
@@ -337,18 +338,18 @@ void run_all_latency_tests(void) {{
     for (int i = 0; i < NUM_TESTS; i++) {{
         const latency_test_t* test = &all_tests[i];
         
-        // Mehrere Durchläufe für statistische Genauigkeit
-        uint32_t min_cycles = UINT32_MAX;
+        // Multiple runs for statistical accuracy
+        float min_cycles = 1000000.0f;
         for (int run = 0; run < 5; run++) {{
-            uint32_t cycles = test->function();
+            float cycles = test->function();
             if (cycles < min_cycles) min_cycles = cycles;
             vTaskDelay(pdMS_TO_TICKS(20));
         }}
         
-        float cpi = (float)min_cycles / test->instruction_count;
-        float latency = (float)min_cycles / test->iterations;
+        float cpi = min_cycles / (float)test->instruction_count;
+        float latency = min_cycles / (float)test->iterations;
         
-        printf("%-25s %-12" PRIu32 " %-8.2f %-10.2f %s\\n",
+        printf("%-25s %-12.2f %-8.2f %-10.2f %s\\n",
                test->name, min_cycles, cpi, latency, test->description);
         
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -367,11 +368,11 @@ void print_csv_results(void) {{
     for (int i = 0; i < NUM_TESTS; i++) {{
         const latency_test_t* test = &all_tests[i];
         
-        uint32_t cycles = test->function();
-        float cpi = (float)cycles / test->instruction_count;
-        float latency = (float)cycles / test->iterations;
+        float cycles = test->function();
+        float cpi = cycles / (float)test->instruction_count;
+        float latency = cycles / (float)test->iterations;
         
-        fprintf(csv_file, "%s,%s,%" PRIu32 ",%" PRIu32 ",%.2f,%.2f,%s\\n",
+        fprintf(csv_file, "%s,%s,%.2f,%" PRIu32 ",%.2f,%.2f,%s\\n",
                 test->name, test->category, cycles, test->iterations, 
                 cpi, latency, test->description);
         
@@ -387,7 +388,7 @@ void print_detailed_results(void) {{
     printf("DETAILED LATENCY ANALYSIS\\n");
     printf("================================================\\n\\n");
     
-    // Gruppiere nach Kategorie
+    // Group by category
     const char* categories[] = {{"REG2REG", "MEM2REG", "FLAGS", "REG2MEM", "DIV"}};
     const char* cat_names[] = {{"Register-to-Register", "Memory-to-Register", 
                                "Status-Flags", "Register-to-Memory", "Division"}};
@@ -397,10 +398,10 @@ void print_detailed_results(void) {{
         
         for (int i = 0; i < NUM_TESTS; i++) {{
             if (strcmp(all_tests[i].category, categories[cat_idx]) == 0) {{
-                uint32_t cycles = all_tests[i].function();
-                float latency = (float)cycles / all_tests[i].iterations;
+                float cycles = all_tests[i].function();
+                float latency = cycles / (float)all_tests[i].iterations;
                 
-                printf("  %-20s: %6" PRIu32 " cycles, latency: %6.2f cycles/iter\\n",
+                printf("  %-20s: %8.2f cycles, latency: %8.2f cycles/iter\\n",
                        all_tests[i].name, cycles, latency);
             }}
         }}
@@ -408,16 +409,12 @@ void print_detailed_results(void) {{
 }}
 """
 
-# ============================================================================
-# 3. KORRIGIERTE GENERATOR-FUNKTION MIT RICHTIGEM ASSEMBLER-FORMAT
-# ============================================================================
-
 def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
     
-    from __main__ import LatencyTestGenerator # Ensure access to your classes
+    from __main__ import LatencyTestGenerator
     generator = LatencyTestGenerator()
     
-    # Sammle alle Tests
+    # Collect all tests
     all_tests = []
     
     # Register-to-Register Tests
@@ -456,13 +453,13 @@ def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
         all_tests.append(test)
     
     # ============================================================================
-    # GENERIERE HEADER DATEI
+    # GENERATE HEADER FILE
     # ============================================================================
     
     function_decls = []
     for test in all_tests:
         func_name = f"test_{test['name'].lower()}"
-        function_decls.append(f"uint32_t {func_name}(void);")
+        function_decls.append(f"float {func_name}(void);")
     
     header_content = HEADER_TEMPLATE.format(
         function_declarations="\n".join(function_decls)
@@ -472,7 +469,7 @@ def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
         f.write(header_content)
     
     # ============================================================================
-    # GENERIERE TEST-FUNKTIONEN MIT KORREKTEM ASSEMBLER
+    # GENERATE TEST FUNCTIONS
     # ============================================================================
     
     test_functions = []
@@ -481,20 +478,14 @@ def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
     for idx, test in enumerate(all_tests):
         func_name = f"test_{test['name'].lower()}"
         
-        # FIX: Build the instruction block correctly
-        # We use C string concatenation: "line1\n" "line2\n"
         instruction_lines = []
         
-        # If it's a memory test, add the setup pointer instruction
         if "LDR" in test['name'] or "STR" in test['name']:
             instruction_lines.append('            "addi a3, a3, 0\\n"')
 
-        # Jede Instruktion einzeln formatieren
         for instr_name, operands in test["instructions"]:
-            # Wir sorgen dafür, dass wir nur Register nutzen, die wir oben vorbereitet haben
             instruction_lines.append(f'            "{instr_name} {operands}\\n"')
         
-        # Join lines with actual newlines for the C file readability
         instruction_block = "\n".join(instruction_lines)
         
         test_func = TEST_FUNCTION_TEMPLATE.format(
@@ -504,7 +495,6 @@ def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
         )
         test_functions.append(test_func)
         
-        # Füge zur Test-Definition hinzu
         test_def = f'    {{"{test["name"]}", {func_name}, {test["iterations"]}, ' \
                    f'{test["instruction_count"]}, "{test["description"]}", "{test["category"]}"}}'
         if idx < len(all_tests) - 1:
@@ -512,7 +502,7 @@ def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
         test_definitions.append(test_def)
     
     # ============================================================================
-    # GENERIERE HAUPT-C-DATEI
+    # GENERATE MAIN C FILE
     # ============================================================================
     
     main_content = MAIN_TEMPLATE.format(
@@ -524,7 +514,7 @@ def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
         f.write(main_content)
     
     # ============================================================================
-    # GENERIERE BEISPIEL MAIN.C
+    # GENERATE MAIN.C
     # ============================================================================
     
     example_main = """#include <stdio.h>
@@ -538,15 +528,15 @@ void app_main(void) {
     
     vTaskDelay(pdMS_TO_TICKS(2000));
     
-    // Option 1: Ausführliche Ausgabe
+    // Option 1: Detailed output
     run_all_latency_tests();
     
     vTaskDelay(pdMS_TO_TICKS(1000));
     
-    // Option 2: CSV Ausgabe (benötigt SD Card)
+    // Option 2: CSV output (requires SD Card)
     // print_csv_results();
     
-    // Option 3: Detaillierte Analyse
+    // Option 3: Detailed analysis
     print_detailed_results();
     
     printf("\\n=== All tests completed ===\\n");
@@ -560,11 +550,6 @@ void app_main(void) {
     with open(f"main/main.c", "w") as f:
         f.write(example_main)
     
-    # ============================================================================
-    # GENERIERE CMakeLists.txt DATEIEN
-    # ============================================================================
-    
-    # main/CMakeLists.txt
     main_cmake = """idf_component_register(SRCS "main.c"
                               "esp32c6_latency_tests.c"
                        INCLUDE_DIRS "."
@@ -574,13 +559,9 @@ void app_main(void) {
     with open(f"main/CMakeLists.txt", "w") as f:
         f.write(main_cmake)
     
-    # ============================================================================
-    # AUSGABE STATISTIKEN
-    # ============================================================================
-    
-    print(f"✅ Komplette Latency-Test-Suite generiert in {output_dir}/")
-    print(f"\n📊 Test-Statistiken:")
-    print(f"   - Gesamtanzahl Tests: {len(all_tests)}")
+    print(f"  Complete latency test suite generated in {output_dir}/")
+    print(f"\n Test Statistics:")
+    print(f"   - Total number of tests: {len(all_tests)}")
     
     categories = {}
     for test in all_tests:
@@ -598,16 +579,15 @@ void app_main(void) {
         print(f"   - {cat_name}: {count} Tests")
     
     total_instructions = sum(t["instruction_count"] * t["iterations"] for t in all_tests)
-    print(f"   - Total Instructions pro Testlauf: {total_instructions}")
+    print(f"   - Total Instructions per test run: {total_instructions}")
     
-    print(f"\n📁 Generierte Dateien:")
+    print(f"\n Generated files:")
     print(f"   - main/esp32c6_latency_tests.h")
     print(f"   - main/esp32c6_latency_tests.c")
     print(f"   - main/main.c")
     print(f"   - main/CMakeLists.txt")
-    print(f"   - CMakeLists.txt (Root)")
     
-    print(f"\n🚀 Build-Anleitung:")
+    print(f"\n Build instructions:")
     print(f"   1. cd {output_dir}")
     print(f"   2. idf.py set-target esp32c6")
     print(f"   3. idf.py build")
@@ -615,41 +595,25 @@ void app_main(void) {
     
     return all_tests
 
-
-
-
 # ============================================================================
-# 6. MAIN EXECUTION
-# ============================================================================
-
-# ... (deine Klassen und Templates bleiben gleich bis zum Ende von generate_complete_latency_test_suite) ...
-
-# ============================================================================
-# 4. MAIN EXECUTION (Vollständig bereinigt)
+# 4. MAIN EXECUTION
 # ============================================================================
 
 if __name__ == "__main__":
     print("ESP32-C6 Latency Test Generator - Clean Version")
     print("=" * 60)
     
-    # Generiere direkt die neue Suite ohne Nachfrage
     output_directory = "esp32c6_latency_fixed"
     tests = generate_complete_latency_test_suite(output_directory)
     
     print("\n" + "=" * 60)
-    print(f"✅ Fertig! Die Test-Suite wurde in '{output_directory}' erstellt.")
+    print(f" Done! Test suite created in '{output_directory}'.")
     
-    # Zeige eine kurze Zusammenfassung der generierten Tests
-    print("\n📋 Übersicht der generierten Kategorien:")
+    print("\n Overview of generated categories:")
     categories = {}
     for test in tests:
         cat = test["category"]
         categories[cat] = categories.get(cat, 0) + 1
     
     for cat, count in categories.items():
-        print(f"   - {cat}: {count} Tests")
-
-    print("\n🚀 Nächste Schritte:")
-    print(f"   1. cd {output_directory}")
-    print("   2. idf.py set-target esp32c6")
-    print("   3. idf.py build flash monitor")
+        print(f"   - {cat}: {count} tests")
