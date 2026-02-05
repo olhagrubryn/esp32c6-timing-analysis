@@ -257,7 +257,7 @@ TEST_FUNCTION_TEMPLATE = """float {test_name}(void) {{
     }}
     
     portEXIT_CRITICAL(&test_mutex);
-    return total_cycles / (float){iterations};
+    return total_cycles;
 }}
 """
 
@@ -347,7 +347,7 @@ void run_all_latency_tests(void) {{
         }}
         
         float cpi = min_cycles / (float)test->instruction_count;
-        float latency = min_cycles / (float)test->iterations;
+        float latency = cpi / (float)test->iterations;
         
         printf("%-25s %-12.2f %-8.2f %-10.2f %s\\n",
                test->name, min_cycles, cpi, latency, test->description);
