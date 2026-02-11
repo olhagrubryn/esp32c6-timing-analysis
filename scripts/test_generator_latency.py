@@ -1,234 +1,316 @@
 #!/usr/bin/env python3
-# esp32c6_latency_test_generator_final.py - Fixed version with correct assembler
+# scripts/generate_latency_tests.py - ESP32-C6 Instruction Latency Test Generator
 
 import os
+import sys
+import random
 import shutil
 
 # ============================================================================
-# 1. GENERATOR CLASSES
+# Pfad-Konfiguration
 # ============================================================================
 
-class LatencyTestGenerator:
-    """Base class for latency test generation."""
-    
-    @staticmethod
-    def generate_register_to_register_tests():
-        """Register-to-Register Latency Tests."""
-        test_groups = [
-            {
-                "name": "MOV_same_reg",
-                "instructions": [
-                    ("add", "a2, a3, a4"),
-                    ("sub", "a3, a4, a5"),
-                    ("xor", "a4, a5, a6"),
-                    ("or",  "a5, a6, a2"),
-                ],
-                "iterations": 1000,
-                "description": "ALU operations between different registers"
-            },
-            {
-                "name": "MOV_dependency_chain",
-                "instructions": [
-                    ("add", "a2, a3, a4"),
-                    ("add", "a3, a2, a5"),
-                    ("add", "a4, a3, a6"),
-                    ("add", "a5, a4, a2"),
-                ],
-                "iterations": 1000,
-                "description": "Dependency chain with ADD"
-            },
-            {
-                "name": "ALU_reg_shuffle",
-                "instructions": [
-                    ("xor", "a2, a3, a4"),
-                    ("or",  "a3, a2, a5"),
-                    ("and", "a4, a3, a6"),
-                    ("sub", "a5, a4, a2"),
-                ],
-                "iterations": 1000,
-                "description": "ALU operations with register shuffling"
-            }
-        ]
-        
-        return test_groups
-    
-    @staticmethod
-    def generate_memory_to_register_tests():
-        """Memory-to-Register Latency Tests."""
-        test_groups = [
-            {
-                "name": "LDR_simple",
-                "instructions": [
-                    ("lw",   "a2, 0(a3)"),
-                    ("lw",   "a3, 4(a4)"),
-                    ("addi", "a2, a2, 1"),
-                    ("lw",   "a4, 8(a5)"),
-                ],
-                "iterations": 500,
-                "description": "Simple load operations"
-            },
-            {
-                "name": "LDR_dependency_chain",
-                "instructions": [
-                    ("lw",   "a2, 0(a3)"),
-                    ("xor",  "a4, a2, a5"),
-                    ("lw",   "a3, 4(a4)"),
-                    ("add",  "a5, a3, a6"),
-                ],
-                "iterations": 500,
-                "description": "Load with dependency chain"
-            },
-            {
-                "name": "LDR_post_index",
-                "instructions": [
-                    ("lw",   "a2, 0(a3)"),
-                    ("addi", "a3, a3, 4"),
-                    ("lw",   "a4, 0(a3)"),
-                    ("addi", "a3, a3, 4"),
-                ],
-                "iterations": 500,
-                "description": "Load with post-index addressing"
-            }
-        ]
-        
-        return test_groups
-    
-    @staticmethod
-    def generate_status_flags_tests():
-        """Status-Flags-to-Register Latency Tests."""
-        test_groups = [
-            {
-                "name": "CMP_branch",
-                "instructions": [
-                    ("sub",  "a2, a3, a4"),
-                    ("addi", "a5, a5, 1"),
-                    ("addi", "a6, a6, 1"),
-                    ("addi", "a2, a2, 1"),
-                ],
-                "iterations": 1000,
-                "description": "Compare operations"
-            },
-            {
-                "name": "SLT_set",
-                "instructions": [
-                    ("slt",  "a2, a3, a4"),
-                    ("add",  "a5, a2, a6"),
-                    ("sltu", "a3, a5, a2"),
-                    ("or",   "a4, a3, a5"),
-                ],
-                "iterations": 1000,
-                "description": "Set-on-compare instructions"
-            },
-            {
-                "name": "TEST_flags",
-                "instructions": [
-                    ("and",  "a2, a3, a4"),
-                    ("or",   "a5, a5, a2"),
-                    ("addi", "a6, a6, 1"),
-                    ("xor",  "a2, a2, a3"),
-                ],
-                "iterations": 1000,
-                "description": "Test operations affecting flags"
-            }
-        ]
-        
-        return test_groups
-    
-    @staticmethod
-    def generate_register_to_memory_tests():
-        """Register-to-Memory Latency Tests (Store + Load)."""
-        test_groups = [
-            {
-                "name": "STR_LDR_pair",
-                "instructions": [
-                    ("sw",   "a2, 0(a3)"),
-                    ("lw",   "a4, 0(a3)"),
-                    ("addi", "a4, a4, 1"),
-                    ("sw",   "a4, 4(a3)"),
-                ],
-                "iterations": 500,
-                "description": "Store followed by dependent load"
-            },
-            {
-                "name": "STR_chain",
-                "instructions": [
-                    ("sw",   "a2, 0(a3)"),
-                    ("addi", "a3, a3, 4"),
-                    ("sw",   "a4, 0(a3)"),
-                    ("lw",   "a5, -4(a3)"),
-                ],
-                "iterations": 500,
-                "description": "Store chain with address progression"
-            },
-            {
-                "name": "MEM_fence",
-                "instructions": [
-                    ("sw",   "a2, 0(a3)"),
-                    ("fence", "iorw, iorw"),
-                    ("lw",   "a4, 0(a3)"),
-                    ("add",  "a5, a4, a6"),
-                ],
-                "iterations": 500,
-                "description": "Store with memory fence and load"
-            }
-        ]
-        
-        return test_groups
-    
-    @staticmethod
-    def generate_division_tests():
-        """Division Instruction Latency Tests."""
-        test_groups = [
-            {
-                "name": "DIV_fast",
-                "instructions": [
-                    ("div",  "a2, a3, a4"),
-                    ("addi", "a5, a2, 0"),
-                    ("mul",  "a6, a5, a3"),
-                    ("addi", "a3, a3, 1"),
-                ],
-                "iterations": 200,
-                "description": "Division with simple values (fast path)"
-            },
-            {
-                "name": "DIV_slow",
-                "instructions": [
-                    ("div",  "a2, a3, a4"),
-                    ("rem",  "a5, a3, a4"),
-                    ("add",  "a6, a2, a5"),
-                    ("addi", "a4, a4, -1"),
-                ],
-                "iterations": 200,
-                "description": "Division with complex values (slow path)"
-            },
-            {
-                "name": "DIVU_unsigned",
-                "instructions": [
-                    ("divu", "a2, a3, a4"),
-                    ("remu", "a5, a3, a4"),
-                    ("mul",  "a6, a2, a4"),
-                    ("add",  "a2, a6, a5"),
-                ],
-                "iterations": 200,
-                "description": "Unsigned division and remainder"
-            }
-        ]
-        
-        return test_groups
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+
+MAIN_DIR = os.path.join(PROJECT_ROOT, "main")
+TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
 
 # ============================================================================
-# 2. TEMPLATES  ASSEMBLER
+# 1. RISCV INSTRUKTIONEN DATENBANK
 # ============================================================================
 
-TEST_FUNCTION_TEMPLATE = """float {test_name}(void) {{
-    float start, end;
+class RISCVInstructions:
+    """Zentrale Datenbank aller RISC-V Instruktionen für ESP32-C6."""
+    
+    @staticmethod
+    def get_all_instructions():
+        """Alle verfügbaren Instruktionen mit korrekter Syntax."""
+        return {
+            # === ALU Register-zu-Register ===
+            "add":  "add {dst}, {src1}, {src2}",
+            "sub":  "sub {dst}, {src1}, {src2}",
+            "xor":  "xor {dst}, {src1}, {src2}",
+            "or":   "or {dst}, {src1}, {src2}",
+            "and":  "and {dst}, {src1}, {src2}",
+            "sll":  "sll {dst}, {src1}, {src2}",
+            "srl":  "srl {dst}, {src1}, {src2}",
+            "sra":  "sra {dst}, {src1}, {src2}",
+            "slt":  "slt {dst}, {src1}, {src2}",
+            "sltu": "sltu {dst}, {src1}, {src2}",
+            
+            # === ALU Immediate ===
+            "addi":  "addi {dst}, {src1}, {imm}",
+            "xori":  "xori {dst}, {src1}, {imm}",
+            "ori":   "ori {dst}, {src1}, {imm}",
+            "andi":  "andi {dst}, {src1}, {imm}",
+            "slli":  "slli {dst}, {src1}, {imm}",
+            "srli":  "srli {dst}, {src1}, {imm}",
+            "srai":  "srai {dst}, {src1}, {imm}",
+            "slti":  "slti {dst}, {src1}, {imm}",
+            "sltiu": "sltiu {dst}, {src1}, {imm}",
+            
+            # === Load Instruktionen ===
+            "lb":   "lb {dst}, 0({base})",
+            "lh":   "lh {dst}, 0({base})",
+            "lw":   "lw {dst}, 0({base})",
+            "lbu":  "lbu {dst}, 0({base})",
+            "lhu":  "lhu {dst}, 0({base})",
+            
+            # === Store Instruktionen ===
+            "sb":   "sb {src}, 0({base})",
+            "sh":   "sh {src}, 0({base})",
+            "sw":   "sw {src}, 0({base})",
+            
+            # === Multiplikation/Division ===
+            "mul":   "mul {dst}, {src1}, {src2}",
+            "mulh":  "mulh {dst}, {src1}, {src2}",
+            "mulhu": "mulhu {dst}, {src1}, {src2}",
+            "div":   "div {dst}, {src1}, {src2}",
+            "divu":  "divu {dst}, {src1}, {src2}",
+            "rem":   "rem {dst}, {src1}, {src2}",
+            "remu":  "remu {dst}, {src1}, {src2}",
+        }
+    
+    @staticmethod
+    def get_instructions_by_category():
+        """Instruktionen gruppiert nach Kategorien."""
+        return {
+            "REG2REG": {
+                "add", "sub", "xor", "or", "and", "sll", "srl", "sra", "slt", "sltu"
+            },
+            "IMMEDIATE": {
+                "addi", "xori", "ori", "andi", "slli", "srli", "srai", "slti", "sltiu"
+            },
+            "LOAD": {
+                "lb", "lh", "lw", "lbu", "lhu"
+            },
+            "STORE": {
+                "sb", "sh", "sw"
+            },
+            "DIV_MUL": {
+                "mul", "mulh", "mulhu", "div", "divu", "rem", "remu"
+            }
+        }
+
+# ============================================================================
+# 2. SINGLE-INSTRUKTION TEST GENERATOR
+# ============================================================================
+
+class SingleInstructionTestGenerator:
+    """Generiert für JEDE Instruktion einen SEPARATEN Test."""
+    
+    @staticmethod
+    def generate_test_for_instruction(insn_name, insn_template, category):
+        """Erstellt einen einzelnen Test für EINE bestimmte Instruktion."""
+        
+        if category in ["LOAD", "STORE"]:
+            iterations = 500
+            description_prefix = "Memory"
+        elif category == "DIV_MUL":
+            iterations = 200
+            description_prefix = "Arithmetic"
+        else:
+            iterations = 1000
+            description_prefix = "ALU"
+        
+        if category == "LOAD":
+            concrete_instr = insn_template.format(
+                dst="a2",
+                base="a3"
+            )
+            instructions = [(insn_name, concrete_instr)]
+            
+        elif category == "STORE":
+            concrete_instr = insn_template.format(
+                src="a2",
+                base="a3"
+            )
+            instructions = [(insn_name, concrete_instr)]
+            
+        elif category == "IMMEDIATE":
+            concrete_instr = insn_template.format(
+                dst="a2",
+                src1="a3",
+                imm=random.choice([1, 2, 4, 8, 16])
+            )
+            instructions = [(insn_name, concrete_instr)]
+            
+        else:  # REG2REG oder DIV_MUL
+            concrete_instr = insn_template.format(
+                dst="a2",
+                src1="a3",
+                src2="a4"
+            )
+            instructions = [(insn_name, concrete_instr)]
+        
+        test = {
+            "name": f"{insn_name}",
+            "instructions": instructions,
+            "iterations": iterations,
+            "description": f"{description_prefix} latency test for {insn_name}",
+            "category": category,
+            "instruction_count": 1,
+            "insn_name": insn_name
+        }
+        
+        return test
+    
+    @staticmethod
+    def generate_all_single_instruction_tests():
+        """Generiert für JEDE Instruktion einen separaten Test."""
+        all_tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        categories = RISCVInstructions.get_instructions_by_category()
+        
+        for category, insn_set in categories.items():
+            for insn_name in sorted(insn_set):
+                if insn_name in all_insn:
+                    test = SingleInstructionTestGenerator.generate_test_for_instruction(
+                        insn_name, 
+                        all_insn[insn_name],
+                        category
+                    )
+                    all_tests.append(test)
+        
+        return all_tests
+
+# ============================================================================
+# 3. SEQUENZ TEST GENERATOR - FIXED: KEIN ÜBERSCHREIBEN VON BASIS-REGISTERN
+# ============================================================================
+
+class SequenceTestGenerator:
+    """Generiert Tests mit kurzen Sequenzen verschiedener Instruktionen."""
+    
+    @staticmethod
+    def generate_sequence_test(insn_list, category, name_suffix):
+        """Erstellt einen Test mit einer Sequenz von Instruktionen."""
+        instructions = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        
+        for i, insn_name in enumerate(insn_list):
+            if insn_name in all_insn:
+                template = all_insn[insn_name]
+                
+                if category == "LOAD":
+                    # WICHTIG: NIEMALS a3 als Destination verwenden!
+                    # a3 ist der Basis-Register und muss erhalten bleiben
+                    dst_options = ["a2", "a4", "a5", "a6"]
+                    dst = dst_options[i % len(dst_options)]
+                    instr = template.format(dst=dst, base="a3")
+                    instructions.append((insn_name, instr))
+                    
+                elif category == "STORE":
+                    # STORE: Source Register, Basis a3 bleibt erhalten
+                    src_options = ["a2", "a4", "a5", "a6"]
+                    src = src_options[i % len(src_options)]
+                    instr = template.format(src=src, base="a3")
+                    instructions.append((insn_name, instr))
+                    
+                elif category == "IMMEDIATE":
+                    dst = f"a{2 + (i % 4)}"
+                    src1 = f"a{3 + ((i) % 3)}"
+                    instr = template.format(dst=dst, src1=src1, imm=4)
+                    instructions.append((insn_name, instr))
+                    
+                else:  # REG2REG oder DIV_MUL
+                    dst = f"a{2 + (i % 4)}"
+                    src1 = f"a{3 + ((i) % 3)}"
+                    src2 = f"a{4 + ((i+1) % 3)}"
+                    instr = template.format(dst=dst, src1=src1, src2=src2)
+                    instructions.append((insn_name, instr))
+        
+        if not instructions:
+            return None
+            
+        if category in ["LOAD", "STORE"]:
+            iterations = 300
+        elif category == "DIV_MUL":
+            iterations = 100
+        else:
+            iterations = 500
+        
+        test = {
+            "name": f"SEQ_{name_suffix}",
+            "instructions": instructions,
+            "iterations": iterations,
+            "description": f"Sequence of {len(instructions)} {category} instructions",
+            "category": category,
+            "instruction_count": len(instructions),
+            "insn_name": "sequence"
+        }
+        
+        return test
+    
+    @staticmethod
+    def generate_all_sequence_tests():
+        """Generiert verschiedene Sequenz-Tests pro Kategorie."""
+        tests = []
+        categories = RISCVInstructions.get_instructions_by_category()
+        
+        for category, insn_set in categories.items():
+            insn_list = sorted(list(insn_set))
+            
+            if len(insn_list) < 2:
+                continue
+            
+            # Für ALLE Kategorien: 2er und 3er Sequenzen
+            test = SequenceTestGenerator.generate_sequence_test(
+                insn_list[:2], category, f"{category}_2mix"
+            )
+            if test: tests.append(test)
+            
+            if len(insn_list) >= 3:
+                test = SequenceTestGenerator.generate_sequence_test(
+                    insn_list[:3], category, f"{category}_3mix"
+                )
+                if test: tests.append(test)
+            
+            # Random Sequenzen NUR für nicht-memory Kategorien
+            if category not in ["LOAD", "STORE"]:
+                random_sample = random.sample(insn_list, min(4, len(insn_list)))
+                test = SequenceTestGenerator.generate_sequence_test(
+                    random_sample, category, f"{category}_random"
+                )
+                if test: tests.append(test)
+        
+        return tests
+
+# ============================================================================
+# 4. C CODE GENERATOR - KEIN addi a3, a3, 0 MEHR!
+# ============================================================================
+
+def generate_test_function(test):
+    """Generiert C-Code für EINEN Test."""
+    
+    func_name = f"test_{test['name'].replace('-', '_').replace('.', '_')}"
+    
+    instruction_lines = []
+    
+    # KEIN "addi a3, a3, 0" mehr - das ist überflüssig!
+    # Der Compiler macht "mv a3, %[mem_ptr]" bereits in der Inline-Assembly
+    
+    # Instruktionen mit korrekter Syntax
+    for insn_name, operands in test["instructions"]:
+        instruction_lines.append(f'            "{operands}\\n"')
+    
+    instruction_block = "".join(instruction_lines)
+    
+    # C-Funktion Template mit Speicher-Initialisierung
+    func_template = f"""float {func_name}(void) {{
     float total_cycles = 0;
     
-    // Safe buffer in RAM (16 words) to avoid access faults
-    static uint32_t safe_buffer[16] __attribute__((aligned(16)));
+    // Safe buffer in RAM - mit initialisierten Werten!
+    static uint32_t safe_buffer[16] __attribute__((aligned(16))) = {{
+        0x11111111, 0x22222222, 0x33333333, 0x44444444,
+        0x55555555, 0x66666666, 0x77777777, 0x88888888,
+        0x99999999, 0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC,
+        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x12345678
+    }};
+    
     uint32_t *ptr = safe_buffer;
     
-    // Initial values for register tests
+    // Initial values for registers
     uint32_t r3_val = 0x12345678;
     uint32_t r4_val = 0x87654321;
     uint32_t r5_val = 0xABCDEF01;
@@ -236,32 +318,97 @@ TEST_FUNCTION_TEMPLATE = """float {test_name}(void) {{
     
     portENTER_CRITICAL(&test_mutex);
     
-    for (int iter = 0; iter < {iterations}; iter++) {{
+    for (int iter = 0; iter < {test["iterations"]}; iter++) {{
         uint32_t t_start, t_end;
         __asm__ __volatile__ (
-            "mv a3, %[mem_ptr]\\n"   // Load safe RAM address into a3
-            "mv a4, %[mem_ptr]\\n"   // Also into a4 (for offsets)
-            "mv a5, %[mem_ptr]\\n"   // Also into a5
-            "fence\\n"               // Memory Barrier
-            "csrr %[t_start], 0x7E2\\n" // Read start cycle
+            "mv a3, %[mem_ptr]\\n"      // a3 = safe_buffer (BLEIBT ERHALTEN!)
+            "mv a4, %[mem_ptr]\\n"
+            "mv a5, %[mem_ptr]\\n"
+            "fence\\n"
+            "csrr %[t_start], 0x7E2\\n" // Start cycle count
 {instruction_block}
-            "csrr %[t_end], 0x7E2\\n"   // Read end cycle
+            "csrr %[t_end], 0x7E2\\n"   // End cycle count
             "fence\\n"
             : [t_start] "=r"(t_start), [t_end] "=r"(t_end)
             : [mem_ptr] "r"(ptr), "r"(r3_val), "r"(r4_val), "r"(r5_val), "r"(r6_val)
             : "a2", "a3", "a4", "a5", "a6", "memory"
         );
-        start = (float)t_start;
-        end = (float)t_end;
-        total_cycles += (end - start);
+        total_cycles += (float)(t_end - t_start);
     }}
     
     portEXIT_CRITICAL(&test_mutex);
     return total_cycles;
 }}
 """
+    return func_template
 
-HEADER_TEMPLATE = """#ifndef ESP32C6_LATENCY_TESTS_H
+# ============================================================================
+# 5. FILE GENERATOR
+# ============================================================================
+
+def ensure_directories():
+    """Stellt sicher, dass alle benötigten Verzeichnisse existieren."""
+    os.makedirs(MAIN_DIR, exist_ok=True)
+    os.makedirs(TESTS_DIR, exist_ok=True)
+    print(f"  ✓ Using main dir: {MAIN_DIR}")
+    print(f"  ✓ Using tests dir: {TESTS_DIR}")
+
+def generate_all_test_files(all_tests):
+    """Generiert alle Test-Files."""
+    
+    ensure_directories()
+    
+    # ========================================================================
+    # 1. Generiere Test-Files im tests/ Verzeichnis
+    # ========================================================================
+    
+    test_files = []
+    
+    for i, test in enumerate(all_tests):
+        safe_name = test['name'].replace('-', '_').replace('.', '_')
+        c_filename = f"{safe_name}_latency.c"
+        h_filename = f"{safe_name}_latency.h"
+        
+        # Header
+        header_guard = f"TEST_{safe_name.upper()}_LATENCY_H"
+        header_content = f"""#ifndef {header_guard}
+#define {header_guard}
+
+float test_{safe_name}(void);
+
+#endif /* {header_guard} */
+"""
+        
+        # C-File
+        func_name = f"test_{safe_name}"
+        test_func = generate_test_function(test)
+        
+        c_content = f"""#include <stdio.h>
+#include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/portmacro.h"
+#include "../main/esp32c6_latency_tests.h"
+
+extern portMUX_TYPE test_mutex;
+
+{test_func}
+"""
+        
+        with open(os.path.join(TESTS_DIR, c_filename), "w") as f:
+            f.write(c_content)
+        
+        with open(os.path.join(TESTS_DIR, h_filename), "w") as f:
+            f.write(header_content)
+        
+        test_files.append((safe_name, test, c_filename, h_filename))
+        print(f"  ✓ Generated: tests/{c_filename}")
+    
+    # ========================================================================
+    # 2. Generiere zentrale Header-Datei
+    # ========================================================================
+    
+    central_header = """#ifndef ESP32C6_LATENCY_TESTS_H
 #define ESP32C6_LATENCY_TESTS_H
 
 #include <stdint.h>
@@ -269,42 +416,64 @@ HEADER_TEMPLATE = """#ifndef ESP32C6_LATENCY_TESTS_H
 
 extern portMUX_TYPE test_mutex;
 
+// Test-Funktionen - generiert
+"""
+    
+    for safe_name, test, _, h_file in test_files:
+        central_header += f'#include "../tests/{h_file}"\n'
+    
+    central_header += """
 // Initialization
 void init_performance_counters(void);
 
-// Test function declarations
-{function_declarations}
-
-// Test runner
+// Test runners
 void run_all_latency_tests(void);
+void run_category_tests(const char* category);
 void print_csv_results(void);
 void print_detailed_results(void);
 
-#endif // ESP32C6_LATENCY_TESTS_H
-"""
+// Externer Zugriff auf Test-Anzahl
+extern const int LATENCY_TEST_COUNT;
 
-MAIN_TEMPLATE = """#include <stdio.h>
-#include <inttypes.h>
+#endif /* ESP32C6_LATENCY_TESTS_H */
+"""
+    
+    with open(os.path.join(MAIN_DIR, "esp32c6_latency_tests.h"), "w") as f:
+        f.write(central_header)
+    
+    # ========================================================================
+    # 3. Generiere MAIN Test-Runner
+    # ========================================================================
+    
+    test_definitions = []
+    for safe_name, test, c_file, h_file in test_files:
+        test_definitions.append(f'    {{"{test["name"]}", test_{safe_name}, {test["iterations"]}, {test["instruction_count"]}, "{test["description"]}", "{test["category"]}"}}')
+    
+    test_definitions_str = ",\n".join(test_definitions)
+    
+    main_content = f"""#include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp32c6_latency_tests.h"
 
 portMUX_TYPE test_mutex = portMUX_INITIALIZER_UNLOCKED;
 
+// Anzahl der Tests
+const int LATENCY_TEST_COUNT = {len(test_files)};
+
 void init_performance_counters(void) {{
     __asm__ __volatile__ (
         "li a2, 1\\n"
-        "csrw 0x7E0, a2\\n"   // Enable cycle counter
-        "csrw 0x7E1, a2\\n"   // Enable performance counters
+        "csrw 0x7E0, a2\\n"
+        "csrw 0x7E1, a2\\n"
         ::: "a2"
     );
 }}
 
-{test_functions}
-
 // ============================================================================
-// TEST DEFINITIONS AND RUNNER
+// TEST DEFINITIONS
 // ============================================================================
 
 typedef struct {{
@@ -317,53 +486,28 @@ typedef struct {{
 }} latency_test_t;
 
 static const latency_test_t all_tests[] = {{
-{test_definitions}
+{test_definitions_str}
 }};
 
 #define NUM_TESTS (sizeof(all_tests) / sizeof(all_tests[0]))
 
+// ============================================================================
+// TEST RUNNERS
+// ============================================================================
+
 void run_all_latency_tests(void) {{
-    printf("\\n================================================\\n");
+    printf("\\n========================================================\\n");
     printf("ESP32-C6 INSTRUCTION LATENCY TESTS\\n");
-    printf("================================================\\n\\n");
+    printf("========================================================\\n\\n");
+    printf("Total tests: %d\\n\\n", NUM_TESTS);
     
     init_performance_counters();
     vTaskDelay(pdMS_TO_TICKS(100));
     
-    printf("%-25s %-12s %-8s %-10s %s\\n", 
-           "Test", "Cycles", "CPI", "Latency", "Description");
-    printf("%-25s %-12s %-8s %-10s %s\\n",
-           "----", "------", "---", "-------", "-----------");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        const latency_test_t* test = &all_tests[i];
-        
-        // Multiple runs for statistical accuracy
-        float min_cycles = 1000000.0f;
-        for (int run = 0; run < 5; run++) {{
-            float cycles = test->function();
-            if (cycles < min_cycles) min_cycles = cycles;
-            vTaskDelay(pdMS_TO_TICKS(20));
-        }}
-        
-        float cpi = min_cycles / (float)test->instruction_count;
-        float latency = cpi / (float)test->iterations;
-        
-        printf("%-25s %-12.2f %-8.2f %-10.2f %s\\n",
-               test->name, min_cycles, cpi, latency, test->description);
-        
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }}
-}}
-
-void print_csv_results(void) {{
-    FILE* csv_file = fopen("/sd/latency_results.csv", "w");
-    if (csv_file == NULL) {{
-        printf("Error opening CSV file!\\n");
-        return;
-    }}
-    
-    fprintf(csv_file, "Test Name,Category,Cycles,Iterations,CPI,Latency,Description\\n");
+    printf("%-20s %-12s %-8s %-12s %s\\n", 
+           "Instruction", "Cycles", "CPI", "Latency(cycles)", "Category");
+    printf("%-20s %-12s %-8s %-12s %s\\n",
+           "-----------", "------", "---", "--------------", "--------");
     
     for (int i = 0; i < NUM_TESTS; i++) {{
         const latency_test_t* test = &all_tests[i];
@@ -372,171 +516,102 @@ void print_csv_results(void) {{
         float cpi = cycles / (float)test->instruction_count;
         float latency = cycles / (float)test->iterations;
         
-        fprintf(csv_file, "%s,%s,%.2f,%" PRIu32 ",%.2f,%.2f,%s\\n",
-                test->name, test->category, cycles, test->iterations, 
-                cpi, latency, test->description);
+        printf("%-20s %-12.2f %-8.2f %-12.2f %s\\n",
+               test->name, cycles, cpi, latency, test->category);
         
         vTaskDelay(pdMS_TO_TICKS(10));
     }}
+}}
+
+void run_category_tests(const char* category) {{
+    printf("\\n=== Category: %s ===\\n", category);
     
-    fclose(csv_file);
-    printf("\\nCSV results saved to /sd/latency_results.csv\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].category, category) == 0) {{
+            float cycles = all_tests[i].function();
+            float latency = cycles / (float)all_tests[i].iterations;
+            printf("  %-20s: %8.2f cycles, latency: %8.2f cycles/iter\\n",
+                   all_tests[i].name, cycles, latency);
+        }}
+    }}
 }}
 
 void print_detailed_results(void) {{
-    printf("\\n================================================\\n");
-    printf("DETAILED LATENCY ANALYSIS\\n");
-    printf("================================================\\n\\n");
+    printf("\\n========================================================\\n");
+    printf("DETAILED INSTRUCTION LATENCY ANALYSIS\\n");
+    printf("========================================================\\n");
     
-    // Group by category
-    const char* categories[] = {{"REG2REG", "MEM2REG", "FLAGS", "REG2MEM", "DIV"}};
-    const char* cat_names[] = {{"Register-to-Register", "Memory-to-Register", 
-                               "Status-Flags", "Register-to-Memory", "Division"}};
+    const char* categories[] = {{"REG2REG", "IMMEDIATE", "LOAD", "STORE", "DIV_MUL"}};
+    const char* cat_names[] = {{"Register-to-Register", "Immediate", 
+                               "Load", "Store", "Multiply/Divide"}};
     
     for (int cat_idx = 0; cat_idx < 5; cat_idx++) {{
-        printf("\\n=== %s Latency Tests ===\\n", cat_names[cat_idx]);
+        printf("\\n=== %s ===\\n", cat_names[cat_idx]);
+        int count = 0;
         
         for (int i = 0; i < NUM_TESTS; i++) {{
             if (strcmp(all_tests[i].category, categories[cat_idx]) == 0) {{
                 float cycles = all_tests[i].function();
                 float latency = cycles / (float)all_tests[i].iterations;
-                
-                printf("  %-20s: %8.2f cycles, latency: %8.2f cycles/iter\\n",
-                       all_tests[i].name, cycles, latency);
+                printf("  %-20s: %6.2f cycles/iter\\n",
+                       all_tests[i].name, latency);
+                count++;
             }}
         }}
+        
+        if (count == 0) printf("  (no tests)\\n");
     }}
 }}
+
+void print_csv_results(void) {{
+    FILE* csv_file = fopen("/sd/latency_results.csv", "w");
+    if (csv_file == NULL) {{
+        printf("Warning: Cannot open CSV file\\n");
+        return;
+    }}
+    
+    fprintf(csv_file, "Instruction,Category,Cycles,Iterations,CPI,Latency\\n");
+    
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        float cycles = all_tests[i].function();
+        float cpi = cycles / (float)all_tests[i].instruction_count;
+        float latency = cycles / (float)all_tests[i].iterations;
+        
+        fprintf(csv_file, "%s,%s,%.2f,%" PRIu32 ",%.2f,%.2f\\n",
+                all_tests[i].name, all_tests[i].category,
+                cycles, all_tests[i].iterations, cpi, latency);
+    }}
+    
+    fclose(csv_file);
+    printf("\\nCSV results saved\\n");
+}}
 """
-
-def generate_complete_latency_test_suite(output_dir="esp32c6_latency_fixed"):
     
-    from __main__ import LatencyTestGenerator
-    generator = LatencyTestGenerator()
-    
-    # Collect all tests
-    all_tests = []
-    
-    # Register-to-Register Tests
-    reg_tests = generator.generate_register_to_register_tests()
-    for test in reg_tests:
-        test["category"] = "REG2REG"
-        test["instruction_count"] = len(test["instructions"])
-        all_tests.append(test)
-    
-    # Memory-to-Register Tests
-    mem_tests = generator.generate_memory_to_register_tests()
-    for test in mem_tests:
-        test["category"] = "MEM2REG"
-        test["instruction_count"] = len(test["instructions"])
-        all_tests.append(test)
-    
-    # Status-Flags Tests
-    flag_tests = generator.generate_status_flags_tests()
-    for test in flag_tests:
-        test["category"] = "FLAGS"
-        test["instruction_count"] = len(test["instructions"])
-        all_tests.append(test)
-    
-    # Register-to-Memory Tests
-    store_tests = generator.generate_register_to_memory_tests()
-    for test in store_tests:
-        test["category"] = "REG2MEM"
-        test["instruction_count"] = len(test["instructions"])
-        all_tests.append(test)
-    
-    # Division Tests
-    div_tests = generator.generate_division_tests()
-    for test in div_tests:
-        test["category"] = "DIV"
-        test["instruction_count"] = len(test["instructions"])
-        all_tests.append(test)
-    
-    # ============================================================================
-    # GENERATE HEADER FILE
-    # ============================================================================
-    
-    function_decls = []
-    for test in all_tests:
-        func_name = f"test_{test['name'].lower()}"
-        function_decls.append(f"float {func_name}(void);")
-    
-    header_content = HEADER_TEMPLATE.format(
-        function_declarations="\n".join(function_decls)
-    )
-    
-    with open(f"main/esp32c6_latency_tests.h", "w") as f:
-        f.write(header_content)
-    
-    # ============================================================================
-    # GENERATE TEST FUNCTIONS
-    # ============================================================================
-    
-    test_functions = []
-    test_definitions = []
-
-    for idx, test in enumerate(all_tests):
-        func_name = f"test_{test['name'].lower()}"
-        
-        instruction_lines = []
-        
-        if "LDR" in test['name'] or "STR" in test['name']:
-            instruction_lines.append('            "addi a3, a3, 0\\n"')
-
-        for instr_name, operands in test["instructions"]:
-            instruction_lines.append(f'            "{instr_name} {operands}\\n"')
-        
-        instruction_block = "\n".join(instruction_lines)
-        
-        test_func = TEST_FUNCTION_TEMPLATE.format(
-            test_name=func_name,
-            iterations=test.get("iterations", 1000),
-            instruction_block=instruction_block
-        )
-        test_functions.append(test_func)
-        
-        test_def = f'    {{"{test["name"]}", {func_name}, {test["iterations"]}, ' \
-                   f'{test["instruction_count"]}, "{test["description"]}", "{test["category"]}"}}'
-        if idx < len(all_tests) - 1:
-            test_def += ","
-        test_definitions.append(test_def)
-    
-    # ============================================================================
-    # GENERATE MAIN C FILE
-    # ============================================================================
-    
-    main_content = MAIN_TEMPLATE.format(
-        test_functions="\n".join(test_functions),
-        test_definitions="\n".join(test_definitions)
-    )
-    
-    with open(f"main/esp32c6_latency_tests.c", "w") as f:
+    with open(os.path.join(MAIN_DIR, "esp32c6_latency_tests.c"), "w") as f:
         f.write(main_content)
     
-    # ============================================================================
-    # GENERATE MAIN.C
-    # ============================================================================
+    # ========================================================================
+    # 4. Generiere main.c
+    # ========================================================================
     
-    example_main = """#include <stdio.h>
+    main_c = """#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp32c6_latency_tests.h"
 
 void app_main(void) {
-    printf("\\nESP32-C6 Instruction Latency Measurement Suite\\n");
-    printf("================================================\\n\\n");
-    
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    
-    // Option 1: Detailed output
-    run_all_latency_tests();
+    printf("\\n========================================\\n");
+    printf("ESP32-C6 INSTRUCTION LATENCY MEASUREMENT\\n");
+    printf("========================================\\n");
+    printf("Testing %d instructions...\\n\\n", LATENCY_TEST_COUNT);
     
     vTaskDelay(pdMS_TO_TICKS(1000));
     
-    // Option 2: CSV output (requires SD Card)
-    // print_csv_results();
+    // Run all tests
+    run_all_latency_tests();
     
-    // Option 3: Detailed analysis
+    // Detailed analysis
+    vTaskDelay(pdMS_TO_TICKS(500));
     print_detailed_results();
     
     printf("\\n=== All tests completed ===\\n");
@@ -547,73 +622,121 @@ void app_main(void) {
 }
 """
     
-    with open(f"main/main.c", "w") as f:
-        f.write(example_main)
+    with open(os.path.join(MAIN_DIR, "main.c"), "w") as f:
+        f.write(main_c)
     
-    main_cmake = """idf_component_register(SRCS "main.c"
-                              "esp32c6_latency_tests.c"
+    # ========================================================================
+    # 5. Generiere CMakeLists.txt
+    # ========================================================================
+    
+    cmake_sources = "main.c\n    esp32c6_latency_tests.c\n"
+    for safe_name, test, c_file, h_file in test_files:
+        cmake_sources += f"    ../tests/{c_file}\n"
+    
+    cmake = f"""idf_component_register(SRCS {cmake_sources}
                        INCLUDE_DIRS "."
                        REQUIRES freertos)
 """
     
-    with open(f"main/CMakeLists.txt", "w") as f:
-        f.write(main_cmake)
+    with open(os.path.join(MAIN_DIR, "CMakeLists.txt"), "w") as f:
+        f.write(cmake)
     
-    print(f"  Complete latency test suite generated in {output_dir}/")
-    print(f"\n Test Statistics:")
-    print(f"   - Total number of tests: {len(all_tests)}")
+    return test_files
+
+# ============================================================================
+# 6. MAIN GENERATOR
+# ============================================================================
+
+def generate_complete_test_suite():
+    """Hauptfunktion: Generiert ALLE Tests."""
+    
+    print("\n" + "=" * 70)
+    print("ESP32-C6 INSTRUCTION LATENCY TEST GENERATOR")
+    print("=" * 70)
+    print(f"\nProject root: {PROJECT_ROOT}")
+    
+    # 1. Generiere Single-Instruction Tests
+    print("\n[1/3] Generating SINGLE instruction tests...")
+    single_tests = SingleInstructionTestGenerator.generate_all_single_instruction_tests()
+    print(f"      → {len(single_tests)} individual instruction tests")
+    
+    # 2. Generiere Sequenz-Tests (FIXED: Kein Überschreiben von a3!)
+    print("\n[2/3] Generating SEQUENCE tests...")
+    sequence_tests = SequenceTestGenerator.generate_all_sequence_tests()
+    print(f"      → {len(sequence_tests)} sequence tests")
+    
+    # 3. Kombiniere alle Tests
+    all_tests = single_tests + sequence_tests
+    
+    print(f"\n[3/3] Generating {len(all_tests)} test files...")
+    test_files = generate_all_test_files(all_tests)
+    
+    # ========================================================================
+    # STATISTIK
+    # ========================================================================
+    
+    print("\n" + "=" * 70)
+    print("GENERATION COMPLETE!")
+    print("=" * 70)
+    
+    print(f"\n📊 TEST STATISTICS:")
+    print(f"   • Total tests: {len(all_tests)}")
     
     categories = {}
     for test in all_tests:
         cat = test["category"]
         categories[cat] = categories.get(cat, 0) + 1
     
-    for cat, count in categories.items():
-        cat_name = {
+    print(f"\n   By category:")
+    for cat, count in sorted(categories.items()):
+        name_map = {
             "REG2REG": "Register-to-Register",
-            "MEM2REG": "Memory-to-Register",
-            "FLAGS": "Status-Flags",
-            "REG2MEM": "Register-to-Memory",
-            "DIV": "Division"
-        }.get(cat, cat)
-        print(f"   - {cat_name}: {count} Tests")
+            "IMMEDIATE": "Immediate Operations",
+            "LOAD": "Load Instructions",
+            "STORE": "Store Instructions", 
+            "DIV_MUL": "Multiply/Divide"
+        }
+        cat_name = name_map.get(cat, cat)
+        print(f"     • {cat_name:25}: {count:3} tests")
     
-    total_instructions = sum(t["instruction_count"] * t["iterations"] for t in all_tests)
-    print(f"   - Total Instructions per test run: {total_instructions}")
+    single_count = len(single_tests)
+    seq_count = len(sequence_tests)
+    print(f"\n   • Single instruction tests: {single_count}")
+    print(f"   • Sequence tests: {seq_count}")
     
-    print(f"\n Generated files:")
-    print(f"   - main/esp32c6_latency_tests.h")
-    print(f"   - main/esp32c6_latency_tests.c")
-    print(f"   - main/main.c")
-    print(f"   - main/CMakeLists.txt")
+    print(f"\n📁 GENERATED DIRECTORY STRUCTURE:")
+    print(f"   {PROJECT_ROOT}/")
+    print(f"   ├── main/")
+    print(f"   │   ├── CMakeLists.txt")
+    print(f"   │   ├── esp32c6_latency_tests.c")
+    print(f"   │   ├── esp32c6_latency_tests.h")
+    print(f"   │   └── main.c")
+    print(f"   └── tests/")
     
-    print(f"\n Build instructions:")
-    print(f"   1. cd {output_dir}")
-    print(f"   2. idf.py set-target esp32c6")
-    print(f"   3. idf.py build")
-    print(f"   4. idf.py flash monitor")
+    for i, (safe_name, test, c_file, h_file) in enumerate(test_files[:8]):
+        print(f"       ├── {c_file}")
+    if len(test_files) > 8:
+        print(f"       ├── ... ({len(test_files)-8} more files)")
+    
+    print(f"\n🚀 BUILD & RUN:")
+    print(f"   $ cd {PROJECT_ROOT}")
+    print(f"   $ idf.py set-target esp32c6")
+    print(f"   $ idf.py build")
+    print(f"   $ idf.py flash monitor")
+    
+    print("\n✅ DONE!\n")
     
     return all_tests
 
 # ============================================================================
-# 4. MAIN EXECUTION
+# 7. MAIN
 # ============================================================================
 
 if __name__ == "__main__":
-    print("ESP32-C6 Latency Test Generator - Clean Version")
-    print("=" * 60)
+    random.seed(42)
     
-    output_directory = "esp32c6_latency_fixed"
-    tests = generate_complete_latency_test_suite(output_directory)
+    print(f"Script location: {SCRIPT_DIR}")
+    print(f"Project root: {PROJECT_ROOT}")
     
-    print("\n" + "=" * 60)
-    print(f" Done! Test suite created in '{output_directory}'.")
-    
-    print("\n Overview of generated categories:")
-    categories = {}
-    for test in tests:
-        cat = test["category"]
-        categories[cat] = categories.get(cat, 0) + 1
-    
-    for cat, count in categories.items():
-        print(f"   - {cat}: {count} tests")
+    # Generiere alles
+    tests = generate_complete_test_suite()
