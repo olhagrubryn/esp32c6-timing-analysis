@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # scripts/generate_latency_tests.py - ESP32-C6 Instruction Latency Test Generator
-# FIXED: Nur gültige RISC-V Register (a0-a7, aber a0/a1 sind reserved)
+# FIXED: Load access fault - ENDGÜLTIG GEFIXT!
+# a3 wird in JEDER Iteration mit ptr initialisiert!
 
 import os
 import sys
@@ -20,47 +21,47 @@ MAIN_DIR = os.path.join(PROJECT_ROOT, "main")
 TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
 
 # ============================================================================
-# GÜLTIGE RISC-V REGISTER FÜR ESP32-C6
+# GÜLTIGE RISC-V REGISTER FÜR ESP32-C6 - FIXED: a3 ist NUR basis-register!
 # ============================================================================
 
 class RISCVRegisters:
     """Definiert gültige Register für ESP32-C6."""
     
     # Verfügbare temporäre Register (nicht a0/a1 da für Return/Stack)
-    # a2-a7 sind frei verwendbar
-    TEMP_REGS = ["a2", "a3", "a4", "a5", "a6", "a7"]
+    # a2-a7 sind frei verwendbar, aber a3 ist reserviert für Base Pointer!
+    TEMP_REGS = ["a2", "a4", "a5", "a6", "a7"]  # a3 entfernt!
     
     # Für Load/Store: Basis-Register (muss erhalten bleiben)
-    BASE_REG = "a3"
+    BASE_REG = "a3"  # a3 ist NUR für Base Pointer
     
-    # Für Dependency Chains: Verschiedene Destination Register
+    # Für Dependency Chains: Verschiedene Destination Register - OHNE a3!
     DST_REGS = ["a2", "a4", "a5", "a6", "a7"]
     
-    # Für Source Register
-    SRC_REGS = ["a2", "a3", "a4", "a5", "a6", "a7"]
+    # Für Source Register - OHNE a3 für Operationen die a3 überschreiben würden!
+    SRC_REGS = ["a2", "a4", "a5", "a6", "a7"]  # a3 entfernt!
     
     @staticmethod
     def get_register_combinations():
-        """Verschiedene Register-Kombinationen für Tests."""
+        """Verschiedene Register-Kombinationen für Tests - OHNE a3 als dst/src!"""
         return {
             "same_reg": ["a2", "a2", "a2"],  # dst = src1 = src2
-            "diff_reg": ["a2", "a3", "a4"],  # alle verschieden
-            "dst_src1": ["a2", "a2", "a3"],  # dst = src1
-            "dst_src2": ["a2", "a3", "a2"],  # dst = src2
-            "src1_src2": ["a3", "a3", "a3"],  # src1 = src2
+            "diff_reg": ["a2", "a4", "a5"],  # alle verschieden, ohne a3
+            "dst_src1": ["a2", "a2", "a4"],  # dst = src1
+            "dst_src2": ["a2", "a4", "a2"],  # dst = src2
+            "src1_src2": ["a4", "a4", "a4"],  # src1 = src2, ohne a3
         }
     
     @staticmethod
     def get_stress_registers(count):
-        """Generiert eine Liste von Registern für Stress-Tests."""
-        if count <= 6:
-            return RISCVRegisters.TEMP_REGS[:count]
+        """Generiert eine Liste von Registern für Stress-Tests - OHNE a3."""
+        regs = RISCVRegisters.TEMP_REGS[:]  # a2,a4,a5,a6,a7
+        if count <= len(regs):
+            return regs[:count]
         else:
-            # Falls mehr benötigt, recycled
-            return [RISCVRegisters.TEMP_REGS[i % len(RISCVRegisters.TEMP_REGS)] for i in range(count)]
+            return [regs[i % len(regs)] for i in range(count)]
 
 # ============================================================================
-# 1. RISCV INSTRUKTIONEN DATENBANK
+# 1. RISCV INSTRUKTIONEN DATENBANK (UNVERÄNDERT)
 # ============================================================================
 
 class RISCVInstructions:
@@ -138,32 +139,390 @@ class RISCVInstructions:
     
     @staticmethod
     def get_valid_immediate_range(insn_name):
-        """
-        Gibt den gültigen Immediate-Bereich für eine Instruktion zurück.
-        RISC-V hat verschiedene Immediate-Größen je nach Instruktionstyp.
-        """
-        # Shift-Instruktionen: 5 Bit (0-31)
+        """Gibt den gültigen Immediate-Bereich für eine Instruktion zurück."""
         if insn_name in ["slli", "srli", "srai"]:
             return [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 15, 16, 24, 31]
-        
-        # ALU Immediate: 12 Bit signed (-2048 bis 2047)
         elif insn_name in ["addi", "xori", "ori", "andi", "slti", "sltiu"]:
             return [0, 1, 2, 4, 8, 16, 32, 64, 128, 255, 256, 511, 1023, 2047]
-        
-        # Default: kleine positive Zahlen
         else:
             return [0, 1, 2, 4, 8, 16, 32, 64]
 
 # ============================================================================
-# 2. SINGLE-INSTRUKTION TEST GENERATOR - FIXED REGISTER
+# 2. NEUE KLASSE: Multi-Instruction Test Generator (UNVERÄNDERT)
+# ============================================================================
+
+class MultiInstructionTestGenerator:
+    """Generiert Tests mit 10, 20, 30 Instruktionen pro Durchlauf."""
+    
+    @staticmethod
+    def generate_multi_instruction_tests():
+        """Generiert zusätzliche Tests mit mehreren Instruktionen."""
+        all_tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        categories = RISCVInstructions.get_instructions_by_category()
+        
+        instruction_counts = [10, 20, 30]
+        
+        print("\n      → Generating MULTI-INSTRUCTION tests (10,20,30 ops)...")
+        
+        for category, insn_set in categories.items():
+            for insn_name in sorted(insn_set)[:3]:
+                if insn_name in all_insn:
+                    template = all_insn[insn_name]
+                    
+                    if category in ["LOAD", "STORE"]:
+                        tests = MultiInstructionTestGenerator._generate_memory_tests(
+                            insn_name, template, category, instruction_counts
+                        )
+                        all_tests.extend(tests)
+                    
+                    elif category == "IMMEDIATE":
+                        tests = MultiInstructionTestGenerator._generate_immediate_tests(
+                            insn_name, template, instruction_counts
+                        )
+                        all_tests.extend(tests)
+                    
+                    elif category == "REG2REG":
+                        tests = MultiInstructionTestGenerator._generate_reg2reg_tests(
+                            insn_name, template, instruction_counts
+                        )
+                        all_tests.extend(tests)
+                    
+                    elif category == "DIV_MUL":
+                        tests = MultiInstructionTestGenerator._generate_divmul_tests(
+                            insn_name, template, instruction_counts
+                        )
+                        all_tests.extend(tests)
+        
+        return all_tests
+    
+    @staticmethod
+    def _generate_memory_tests(insn_name, template, category, counts):
+        """Memory Tests mit mehreren Instruktionen."""
+        tests = []
+        iterations_base = 200
+        
+        if category == "LOAD":
+            for dst in RISCVRegisters.DST_REGS[:2]:
+                for count in counts:
+                    instr_list = []
+                    for i in range(count):
+                        offset = (i * 4) % 32
+                        if "lb" in insn_name or "lbu" in insn_name:
+                            instr = f"{insn_name} {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                        else:
+                            instr = template.format(dst=dst, base=RISCVRegisters.BASE_REG)
+                        instr_list.append((insn_name, instr))
+                    
+                    test = {
+                        "name": f"{insn_name}_{dst}_multi{count}",
+                        "instructions": instr_list,
+                        "iterations": iterations_base,
+                        "description": f"Multi {count}x {insn_name} to {dst}",
+                        "category": category,
+                        "instruction_count": count,
+                        "variant": f"multi_{count}"
+                    }
+                    tests.append(test)
+        
+        elif category == "STORE":
+            for src in RISCVRegisters.DST_REGS[:2]:
+                for count in counts:
+                    instr_list = []
+                    for i in range(count):
+                        offset = (i * 4) % 32
+                        if "sb" in insn_name:
+                            instr = f"{insn_name} {src}, {offset}({RISCVRegisters.BASE_REG})"
+                        else:
+                            instr = template.format(src=src, base=RISCVRegisters.BASE_REG)
+                        instr_list.append((insn_name, instr))
+                    
+                    test = {
+                        "name": f"{insn_name}_{src}_multi{count}",
+                        "instructions": instr_list,
+                        "iterations": iterations_base,
+                        "description": f"Multi {count}x {insn_name} from {src}",
+                        "category": category,
+                        "instruction_count": count,
+                        "variant": f"multi_{count}"
+                    }
+                    tests.append(test)
+        
+        return tests
+    
+    @staticmethod
+    def _generate_immediate_tests(insn_name, template, counts):
+        """Immediate Tests mit mehreren Instruktionen."""
+        tests = []
+        iterations_base = 200
+        valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)[:3]
+        
+        for imm in valid_imms:
+            for count in counts:
+                instr_list = []
+                for i in range(count):
+                    dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                    src1 = RISCVRegisters.SRC_REGS[i % len(RISCVRegisters.SRC_REGS)]
+                    instr = template.format(dst=dst, src1=src1, imm=imm)
+                    instr_list.append((insn_name, instr))
+                
+                test = {
+                    "name": f"{insn_name}_imm{imm}_multi{count}",
+                    "instructions": instr_list,
+                    "iterations": iterations_base,
+                    "description": f"Multi {count}x {insn_name} imm={imm}",
+                    "category": "IMMEDIATE",
+                    "instruction_count": count,
+                    "variant": f"multi_{count}"
+                }
+                tests.append(test)
+        
+        return tests
+    
+    @staticmethod
+    def _generate_reg2reg_tests(insn_name, template, counts):
+        """Register-to-Register Tests mit mehreren Instruktionen."""
+        tests = []
+        iterations_base = 200
+        reg_combs = RISCVRegisters.get_register_combinations()
+        
+        for comb_name, regs in list(reg_combs.items())[:2]:
+            dst, src1, src2 = regs
+            for count in counts:
+                instr_list = []
+                for i in range(count):
+                    if i % 5 == 0:
+                        alt_dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                        alt_src1 = RISCVRegisters.SRC_REGS[i % len(RISCVRegisters.SRC_REGS)]
+                        alt_src2 = RISCVRegisters.SRC_REGS[(i+1) % len(RISCVRegisters.SRC_REGS)]
+                        instr = template.format(dst=alt_dst, src1=alt_src1, src2=alt_src2)
+                    else:
+                        instr = template.format(dst=dst, src1=src1, src2=src2)
+                    instr_list.append((insn_name, instr))
+                
+                test = {
+                    "name": f"{insn_name}_{comb_name}_multi{count}",
+                    "instructions": instr_list,
+                    "iterations": iterations_base,
+                    "description": f"Multi {count}x {insn_name} {comb_name}",
+                    "category": "REG2REG",
+                    "instruction_count": count,
+                    "variant": f"multi_{count}"
+                }
+                tests.append(test)
+        
+        return tests
+    
+    @staticmethod
+    def _generate_divmul_tests(insn_name, template, counts):
+        """Division/Multiplikation Tests mit mehreren Instruktionen."""
+        tests = []
+        iterations_base = 100
+        div_counts = [10, 20]
+        
+        reg_combs = RISCVRegisters.get_register_combinations()
+        for comb_name, regs in list(reg_combs.items())[:1]:
+            dst, src1, src2 = regs
+            for count in div_counts:
+                instr_list = []
+                for i in range(count):
+                    instr = template.format(dst=dst, src1=src1, src2=src2)
+                    instr_list.append((insn_name, instr))
+                
+                test = {
+                    "name": f"{insn_name}_{comb_name}_multi{count}",
+                    "instructions": instr_list,
+                    "iterations": iterations_base,
+                    "description": f"Multi {count}x {insn_name} {comb_name}",
+                    "category": "DIV_MUL",
+                    "instruction_count": count,
+                    "variant": f"multi_{count}"
+                }
+                tests.append(test)
+        
+        return tests
+
+# ============================================================================
+# 3. NEUE KLASSE: Multi-Sequence Test Generator (UNVERÄNDERT)
+# ============================================================================
+
+class MultiSequenceTestGenerator:
+    """Generiert lange Sequenz-Tests mit 20-50 Instruktionen."""
+    
+    @staticmethod
+    def generate_multi_sequence_tests():
+        """Generiert zusätzliche lange Sequenz-Tests."""
+        tests = []
+        categories = RISCVInstructions.get_instructions_by_category()
+        
+        print("\n      → Generating MULTI-SEQUENCE tests (20-50 ops)...")
+        
+        # 1. LANGE Dependency Chains
+        for category in ["REG2REG", "IMMEDIATE"]:
+            for length in [20, 30, 40]:
+                chain = MultiSequenceTestGenerator._generate_long_chain(category, length)
+                if chain:
+                    test = {
+                        "name": f"LONG_CHAIN_{category}_{length}",
+                        "instructions": chain,
+                        "iterations": 150,
+                        "description": f"Long chain of {length} {category} instr",
+                        "category": category,
+                        "instruction_count": length,
+                        "insn_name": "long_chain"
+                    }
+                    tests.append(test)
+        
+        # 2. LANGE Random Sequences
+        for category in ["REG2REG", "IMMEDIATE", "LOAD"]:
+            for i in range(3):
+                length = random.randint(25, 50)
+                seq = MultiSequenceTestGenerator._generate_long_random(category, length)
+                if seq:
+                    test = {
+                        "name": f"LONG_RAND_{category}_{i+1}_{length}",
+                        "instructions": seq,
+                        "iterations": 150,
+                        "description": f"Long random {length} {category} instr",
+                        "category": category,
+                        "instruction_count": length,
+                        "insn_name": "long_random"
+                    }
+                    tests.append(test)
+        
+        # 3. Memory Stress Tests
+        for pattern in ["sequential", "random", "strided"]:
+            for count in [20, 30, 40]:
+                seq = MultiSequenceTestGenerator._generate_memory_sequence(pattern, count)
+                if seq:
+                    test = {
+                        "name": f"MEM_STRESS_{pattern}_{count}",
+                        "instructions": seq,
+                        "iterations": 150,
+                        "description": f"Memory stress {pattern} {count} loads",
+                        "category": "LOAD",
+                        "instruction_count": count,
+                        "insn_name": "memory_stress"
+                    }
+                    tests.append(test)
+        
+        return tests
+    
+    @staticmethod
+    def _generate_long_chain(category, length):
+        """Generiert eine lange Dependency Chain."""
+        instructions = []
+        
+        if category == "REG2REG":
+            for i in range(length):
+                dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                if i == 0:
+                    src1 = RISCVRegisters.SRC_REGS[0]
+                    src2 = RISCVRegisters.SRC_REGS[1]
+                else:
+                    src1 = instructions[-1][1].split()[1].rstrip(',')
+                    if src1 not in RISCVRegisters.SRC_REGS:
+                        src1 = RISCVRegisters.SRC_REGS[i % len(RISCVRegisters.SRC_REGS)]
+                    src2 = RISCVRegisters.SRC_REGS[(i+1) % len(RISCVRegisters.SRC_REGS)]
+                
+                op = random.choice(["add", "xor", "or"])
+                instr = f"{op} {dst}, {src1}, {src2}"
+                instructions.append((op, instr))
+        
+        elif category == "IMMEDIATE":
+            for i in range(length):
+                dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                if i == 0:
+                    src1 = RISCVRegisters.SRC_REGS[0]
+                else:
+                    src1 = instructions[-1][1].split()[1].rstrip(',')
+                    if src1 not in RISCVRegisters.SRC_REGS:
+                        src1 = RISCVRegisters.SRC_REGS[i % len(RISCVRegisters.SRC_REGS)]
+                
+                imm = (i * 2) % 256
+                instr = f"addi {dst}, {src1}, {imm}"
+                instructions.append(("addi", instr))
+        
+        return instructions if len(instructions) == length else None
+    
+    @staticmethod
+    def _generate_long_random(category, length):
+        """Generiert eine lange zufällige Sequenz."""
+        instructions = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        categories = RISCVInstructions.get_instructions_by_category()
+        
+        if category not in categories:
+            return None
+            
+        insn_list = sorted(list(categories[category]))
+        
+        for i in range(length):
+            insn_name = random.choice(insn_list)
+            if insn_name in all_insn:
+                template = all_insn[insn_name]
+                
+                try:
+                    if category == "LOAD":
+                        dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                        offset = random.choice([0, 4, 8, 12, 16, 20, 24, 28])
+                        instr = f"{insn_name} {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                    
+                    elif category == "IMMEDIATE":
+                        dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                        src1 = RISCVRegisters.SRC_REGS[i % len(RISCVRegisters.SRC_REGS)]
+                        valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)
+                        imm = random.choice(valid_imms)
+                        instr = template.format(dst=dst, src1=src1, imm=imm)
+                    
+                    else:  # REG2REG
+                        dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                        src1 = RISCVRegisters.SRC_REGS[i % len(RISCVRegisters.SRC_REGS)]
+                        src2 = RISCVRegisters.SRC_REGS[(i+1) % len(RISCVRegisters.SRC_REGS)]
+                        instr = template.format(dst=dst, src1=src1, src2=src2)
+                    
+                    instructions.append((insn_name, instr))
+                except:
+                    continue
+        
+        return instructions if instructions else None
+    
+    @staticmethod
+    def _generate_memory_sequence(pattern, count):
+        """Generiert eine Memory-Zugriffssequenz."""
+        instructions = []
+        
+        for i in range(count):
+            dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+            
+            if pattern == "sequential":
+                offset = (i * 4) % 64
+            elif pattern == "strided":
+                offset = (i * 8) % 64
+            else:  # random
+                offset = random.choice([0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60])
+            
+            if i % 3 == 0:
+                instr = f"lw {dst}, {offset}({RISCVRegisters.BASE_REG})"
+            elif i % 3 == 1:
+                instr = f"lh {dst}, {offset}({RISCVRegisters.BASE_REG})"
+            else:
+                instr = f"lb {dst}, {offset}({RISCVRegisters.BASE_REG})"
+            
+            instructions.append(("load", instr))
+        
+        return instructions
+
+# ============================================================================
+# 4. ORIGINAL: SingleInstructionTestGenerator (FIXED: Kein a3 als src1!)
 # ============================================================================
 
 class SingleInstructionTestGenerator:
-    """Generiert für JEDE Instruktion mehrere Varianten."""
+    """Original - Generiert Single-Instruction Tests (1 Instruktion pro Durchlauf)."""
     
     @staticmethod
     def generate_test_variations(insn_name, insn_template, category):
-        """Erstellt mehrere Varianten für eine Instruktion."""
+        """Original - FIXED: Kein a3 als src1!"""
         tests = []
         
         # Basis-Konfigurationen
@@ -171,7 +530,6 @@ class SingleInstructionTestGenerator:
             iterations_base = 500
             prefix = "Memory"
             
-            # LOAD: Verschiedene Destination Register (NICHT a3!)
             if category == "LOAD":
                 for dst in RISCVRegisters.DST_REGS:
                     try:
@@ -192,9 +550,8 @@ class SingleInstructionTestGenerator:
                     except:
                         continue
             
-            # STORE: Verschiedene Source Register
             elif category == "STORE":
-                for src in RISCVRegisters.DST_REGS:  # Store von verschiedenen Quellen
+                for src in RISCVRegisters.DST_REGS:
                     try:
                         concrete_instr = insn_template.format(
                             src=src, 
@@ -218,11 +575,12 @@ class SingleInstructionTestGenerator:
             prefix = "Immediate"
             valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)
             
-            for imm in valid_imms[:6]:  # Maximal 6 Varianten
+            for imm in valid_imms[:6]:
                 try:
+                    # FIXED: src1 ist a4 (NICHT a3!) - a3 bleibt Base Pointer!
                     concrete_instr = insn_template.format(
                         dst="a2",
-                        src1="a3",
+                        src1="a4",  # WICHTIG: a4 statt a3!
                         imm=imm
                     )
                     test = {
@@ -245,7 +603,7 @@ class SingleInstructionTestGenerator:
             
             for comb_name, regs in reg_combs.items():
                 dst, src1, src2 = regs
-                # Prüfe ob alle Register gültig sind
+                # Prüfe ob alle Register gültig sind (OHNE a3!)
                 if all(r in RISCVRegisters.SRC_REGS for r in [dst, src1, src2]):
                     try:
                         concrete_instr = insn_template.format(
@@ -297,7 +655,7 @@ class SingleInstructionTestGenerator:
     
     @staticmethod
     def generate_all_single_instruction_tests():
-        """Generiert ALLE Varianten für jede Instruktion."""
+        """Original - unverändert."""
         all_tests = []
         all_insn = RISCVInstructions.get_all_instructions()
         categories = RISCVInstructions.get_instructions_by_category()
@@ -315,15 +673,15 @@ class SingleInstructionTestGenerator:
         return all_tests
 
 # ============================================================================
-# 3. SEQUENZ TEST GENERATOR - FIXED REGISTER
+# 5. ORIGINAL: SequenceTestGenerator (FIXED: Kein a3 als src1!)
 # ============================================================================
 
 class SequenceTestGenerator:
-    """Generiert umfangreiche Sequenz-Tests mit vielen Varianten."""
+    """Original - Generiert kurze Sequenz-Tests (2-6 Instruktionen)."""
     
     @staticmethod
     def generate_dependency_chains(insn_name, category, length=5):
-        """Generiert eine Dependency Chain mit einer Instruktion."""
+        """Original - FIXED: Kein a3 als src1!"""
         instructions = []
         all_insn = RISCVInstructions.get_all_instructions()
         
@@ -350,14 +708,13 @@ class SequenceTestGenerator:
                     instr = template.format(dst=dst, src1=src1, imm=imm)
                 
                 else:  # REG2REG oder DIV_MUL
-                    # Echte Dependency Chain: Ergebnis wird nächste Quelle
                     if i == 0:
                         dst = "a2"
-                        src1 = "a3"
-                        src2 = "a4"
+                        src1 = "a4"  # FIXED: a4 statt a3!
+                        src2 = "a5"
                     else:
                         dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
-                        src1 = RISCVRegisters.DST_REGS[(i-1) % len(RISCVRegisters.DST_REGS)]  # Abhängig vom vorherigen
+                        src1 = RISCVRegisters.DST_REGS[(i-1) % len(RISCVRegisters.DST_REGS)]
                         src2 = RISCVRegisters.SRC_REGS[(i+2) % len(RISCVRegisters.SRC_REGS)]
                     instr = template.format(dst=dst, src1=src1, src2=src2)
                 
@@ -369,7 +726,7 @@ class SequenceTestGenerator:
     
     @staticmethod
     def generate_random_sequence(category, min_len=2, max_len=6):
-        """Generiert eine vollständig zufällige Sequenz."""
+        """Original - unverändert."""
         all_insn = RISCVInstructions.get_all_instructions()
         categories = RISCVInstructions.get_instructions_by_category()
         
@@ -416,17 +773,17 @@ class SequenceTestGenerator:
     
     @staticmethod
     def generate_all_sequence_tests():
-        """Generiert ALLE möglichen Sequenz-Tests."""
+        """Original - unverändert."""
         tests = []
         categories = RISCVInstructions.get_instructions_by_category()
         
-        # 1. Dependency Chains für jede Instruktion
+        # 1. Dependency Chains
         print("\n      → Generating dependency chains...")
         for category, insn_set in categories.items():
             if category in ["LOAD", "STORE"]:
-                continue  # Skip für Memory
+                continue
             
-            for insn_name in sorted(insn_set)[:2]:  # Erste 2 pro Kategorie
+            for insn_name in sorted(insn_set)[:2]:
                 for length in [3, 4]:
                     chain = SequenceTestGenerator.generate_dependency_chains(
                         insn_name, category, length
@@ -443,11 +800,10 @@ class SequenceTestGenerator:
                         }
                         tests.append(test)
         
-        # 2. Mix verschiedener Instruktionen
+        # 2. Instruction Mixes
         print("      → Generating instruction mixes...")
         for category, insn_set in categories.items():
             insn_list = sorted(list(insn_set))
-            
             for length in [2, 3, 4]:
                 if len(insn_list) >= length:
                     test = SequenceTestGenerator.generate_sequence_test(
@@ -455,19 +811,16 @@ class SequenceTestGenerator:
                     )
                     if test: tests.append(test)
         
-        # 3. Zufällige Sequenzen
+        # 3. Random Sequences
         print("      → Generating random sequences...")
         for category in categories.keys():
             if category in ["LOAD", "STORE"]:
                 num_random = 5
             else:
                 num_random = 10
-            
             for i in range(num_random):
                 seq = SequenceTestGenerator.generate_random_sequence(
-                    category, 
-                    min_len=3, 
-                    max_len=6
+                    category, min_len=3, max_len=6
                 )
                 if seq:
                     test = {
@@ -481,14 +834,13 @@ class SequenceTestGenerator:
                     }
                     tests.append(test)
         
-        # 4. Register-Stress-Tests - FIXED: Nur gültige Register!
+        # 4. Register Stress Tests
         print("      → Generating register stress tests...")
         for category in ["REG2REG", "IMMEDIATE"]:
-            for reg_count in [3, 4, 5]:  # Max 5 da wir nur a2-a7 haben (6 Register)
+            for reg_count in [3, 4, 5]:
                 instructions = []
                 regs = RISCVRegisters.get_stress_registers(reg_count)
-                
-                for i in range(6):  # 6 Instruktionen
+                for i in range(6):
                     try:
                         if category == "REG2REG":
                             dst = regs[i % len(regs)]
@@ -516,7 +868,7 @@ class SequenceTestGenerator:
                     }
                     tests.append(test)
         
-        # 5. Memory Access Patterns (nur LOAD) - FIXED: Gültige Offsets
+        # 5. Memory Access Patterns
         print("      → Generating memory access patterns...")
         for pattern in ["sequential", "random"]:
             for count in [2, 3, 4]:
@@ -549,7 +901,7 @@ class SequenceTestGenerator:
     
     @staticmethod
     def generate_sequence_test(insn_list, category, name_suffix):
-        """Erstellt einen Test mit einer Sequenz von Instruktionen."""
+        """Original - unverändert."""
         instructions = []
         all_insn = RISCVInstructions.get_all_instructions()
         
@@ -606,60 +958,75 @@ class SequenceTestGenerator:
         }
 
 # ============================================================================
-# 4. C CODE GENERATOR
+# 6. C CODE GENERATOR - FIXED: a3 wird in JEDER Iteration initialisiert!
 # ============================================================================
 
 def generate_test_function(test):
-    """Generiert C-Code für EINEN Test."""
+    """C-Code Generator - FIXED: a3 wird in JEDER Iteration mit ptr initialisiert!"""
     
     func_name = f"test_{test['name'].replace('-', '_').replace('.', '_')}"
     
     instruction_lines = []
     
-    # Instruktionen mit korrekter Syntax
     for insn_name, operands in test["instructions"]:
         instruction_lines.append(f'            "{operands}\\n"')
     
     instruction_block = "".join(instruction_lines)
     
-    # C-Funktion Template mit Speicher-Initialisierung
+    # ============= DAS IST DER CRITICAL FIX! =============
+    # a3 wird in JEDER Iteration mit ptr initialisiert!
+    # =====================================================
     func_template = f"""float {func_name}(void) {{
     float total_cycles = 0;
     
     // Safe buffer in RAM - mit initialisierten Werten!
-    static uint32_t safe_buffer[32] __attribute__((aligned(32))) = {{
+    static uint32_t safe_buffer[64] __attribute__((aligned(64))) = {{
         0x11111111, 0x22222222, 0x33333333, 0x44444444,
         0x55555555, 0x66666666, 0x77777777, 0x88888888,
         0x99999999, 0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC,
-        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x12345678
+        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x12345678,
+        0x11111111, 0x22222222, 0x33333333, 0x44444444,
+        0x55555555, 0x66666666, 0x77777777, 0x88888888,
+        0x99999999, 0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC,
+        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x87654321
     }};
     
     uint32_t *ptr = safe_buffer;
     
     // Initial values for registers
-    uint32_t r3_val = 0x12345678;
-    uint32_t r4_val = 0x87654321;
-    uint32_t r5_val = 0xABCDEF01;
-    uint32_t r6_val = 0xFEDCBA98;
-    uint32_t r7_val = 0x0F0F0F0F;
+    uint32_t r2_val = 0x12345678;
+    uint32_t r3_val = 0x87654321;
+    uint32_t r4_val = 0xABCDEF01;
+    uint32_t r5_val = 0xFEDCBA98;
+    uint32_t r6_val = 0x0F0F0F0F;
+    uint32_t r7_val = 0xF0F0F0F0;
     
     portENTER_CRITICAL(&test_mutex);
     
     for (int iter = 0; iter < {test["iterations"]}; iter++) {{
         uint32_t t_start, t_end;
         __asm__ __volatile__ (
-            "mv a3, %[mem_ptr]\\n"      // a3 = safe_buffer (BLEIBT ERHALTEN!)
-            "mv a4, %[mem_ptr]\\n"
-            "mv a5, %[mem_ptr]\\n"
-            "mv a6, %[mem_ptr]\\n"
-            "mv a7, %[mem_ptr]\\n"
+            // FIXED: a3 wird in JEDER Iteration neu initialisiert!
+            "mv a3, %[mem_ptr]\\n"      // a3 = gültiger Speicherpointer (JEDE Iteration!)
+            
+            // Initialize work registers with test values
+            "mv a2, %[r2_val]\\n"
+            "mv a4, %[r4_val]\\n"
+            "mv a5, %[r5_val]\\n"
+            "mv a6, %[r6_val]\\n"
+            "mv a7, %[r7_val]\\n"
             "fence\\n"
             "csrr %[t_start], 0x7E2\\n" // Start cycle count
 {instruction_block}
             "csrr %[t_end], 0x7E2\\n"   // End cycle count
             "fence\\n"
             : [t_start] "=r"(t_start), [t_end] "=r"(t_end)
-            : [mem_ptr] "r"(ptr), "r"(r3_val), "r"(r4_val), "r"(r5_val), "r"(r6_val), "r"(r7_val)
+            : [mem_ptr] "r"(ptr),  // WICHTIG: ptr wird bei JEDER Iteration übergeben!
+              [r2_val] "r"(r2_val),
+              [r4_val] "r"(r4_val),
+              [r5_val] "r"(r5_val),
+              [r6_val] "r"(r6_val),
+              [r7_val] "r"(r7_val)
             : "a2", "a3", "a4", "a5", "a6", "a7", "memory"
         );
         total_cycles += (float)(t_end - t_start);
@@ -672,7 +1039,7 @@ def generate_test_function(test):
     return func_template
 
 # ============================================================================
-# 5. FILE GENERATOR
+# 7. FILE GENERATOR (UNVERÄNDERT)
 # ============================================================================
 
 def ensure_directories():
@@ -680,13 +1047,13 @@ def ensure_directories():
     os.makedirs(MAIN_DIR, exist_ok=True)
     os.makedirs(TESTS_DIR, exist_ok=True)
     
-    # Erstelle Unterverzeichnisse für verschiedene Test-Typen
     os.makedirs(os.path.join(TESTS_DIR, "single"), exist_ok=True)
     os.makedirs(os.path.join(TESTS_DIR, "chains"), exist_ok=True)
     os.makedirs(os.path.join(TESTS_DIR, "sequences"), exist_ok=True)
     os.makedirs(os.path.join(TESTS_DIR, "random"), exist_ok=True)
     os.makedirs(os.path.join(TESTS_DIR, "stress"), exist_ok=True)
     os.makedirs(os.path.join(TESTS_DIR, "memory"), exist_ok=True)
+    os.makedirs(os.path.join(TESTS_DIR, "multi"), exist_ok=True)
     
     print(f"  ✓ Created test subdirectories")
 
@@ -706,6 +1073,8 @@ def generate_all_test_files(all_tests):
     for test in all_tests:
         if test["instruction_count"] == 1:
             subdir = "single"
+        elif "multi" in test.get("variant", "") or "MULTI" in test["name"] or "LONG" in test["name"]:
+            subdir = "multi"
         elif "CHAIN" in test["name"]:
             subdir = "chains"
         elif "SEQ" in test["name"]:
@@ -742,7 +1111,6 @@ float test_{safe_name}(void);
 """
             
             # C-File
-            func_name = f"test_{safe_name}"
             test_func = generate_test_function(test)
             
             c_content = f"""#include <stdio.h>
@@ -764,7 +1132,7 @@ extern portMUX_TYPE test_mutex;
                 f.write(header_content)
             
             test_files.append((safe_name, test, c_filename, h_filename, subdir))
-            print(f"  ✓ Generated: tests/{subdir}/{c_filename}")
+            print(f"  ✓ Generated: tests/{subdir}/{c_filename} ({test['instruction_count']} ops)")
     
     # ========================================================================
     # 2. Generiere zentrale Header-Datei
@@ -799,6 +1167,7 @@ void print_statistical_summary(void);
 // Externer Zugriff auf Test-Anzahl
 extern const int LATENCY_TEST_COUNT;
 extern const int SINGLE_TEST_COUNT;
+extern const int MULTI_TEST_COUNT;
 extern const int SEQUENCE_TEST_COUNT;
 extern const int RANDOM_TEST_COUNT;
 
@@ -819,6 +1188,7 @@ extern const int RANDOM_TEST_COUNT;
     test_definitions_str = ",\n".join(test_definitions)
     
     single_count = len([t for t in test_files if t[1]["instruction_count"] == 1])
+    multi_count = len([t for t in test_files if t[1]["instruction_count"] > 1])
     seq_count = len([t for t in test_files if "SEQ" in t[1]["name"] or "CHAIN" in t[1]["name"]])
     random_count = len([t for t in test_files if "RAND" in t[1]["name"]])
     
@@ -835,6 +1205,7 @@ portMUX_TYPE test_mutex = portMUX_INITIALIZER_UNLOCKED;
 // Test statistics
 const int LATENCY_TEST_COUNT = {len(test_files)};
 const int SINGLE_TEST_COUNT = {single_count};
+const int MULTI_TEST_COUNT = {multi_count};
 const int SEQUENCE_TEST_COUNT = {seq_count};
 const int RANDOM_TEST_COUNT = {random_count};
 
@@ -880,6 +1251,7 @@ void run_all_latency_tests(void) {{
     printf("Test Statistics:\\n");
     printf("  • Total tests: %d\\n", NUM_TESTS);
     printf("  • Single instruction tests: %d\\n", SINGLE_TEST_COUNT);
+    printf("  • Multi instruction tests: %d (10-50 ops)\\n", MULTI_TEST_COUNT);
     printf("  • Sequence tests: %d\\n", SEQUENCE_TEST_COUNT);
     printf("  • Random tests: %d\\n", RANDOM_TEST_COUNT);
     printf("\\n");
@@ -887,10 +1259,10 @@ void run_all_latency_tests(void) {{
     init_performance_counters();
     vTaskDelay(pdMS_TO_TICKS(100));
     
-    printf("\\n%-25s %-10s %-10s %-10s %-15s %s\\n", 
-           "Test Name", "Cycles", "CPI", "Latency", "Group", "Category");
-    printf("%-25s %-10s %-10s %-10s %-15s %s\\n",
-           "---------", "------", "---", "-------", "-----", "--------");
+    printf("\\n%-30s %-12s %-12s %-12s %-15s %s\\n", 
+           "Test Name", "Total Cycles", "CPI", "Latency/Op", "Group", "Category");
+    printf("%-30s %-12s %-12s %-12s %-15s %s\\n",
+           "---------", "-----------", "---", "----------", "-----", "--------");
     
     float total_latency = 0;
     float min_latency = 999999;
@@ -909,28 +1281,62 @@ void run_all_latency_tests(void) {{
         
         float cycles_avg = cycles_sum / 3.0f;
         float cpi = cycles_avg / (float)test->instruction_count;
-        float latency = cycles_avg / (float)test->iterations;
+        float per_instruction = cycles_avg / (float)test->iterations / (float)test->instruction_count;
         
-        total_latency += latency;
-        if (latency < min_latency) min_latency = latency;
-        if (latency > max_latency) max_latency = latency;
+        total_latency += per_instruction;
+        if (per_instruction < min_latency) min_latency = per_instruction;
+        if (per_instruction > max_latency) max_latency = per_instruction;
         
-        printf("%-25s %-10.2f %-10.2f %-10.2f %-15s %s\\n",
-               test->name, cycles_avg, cpi, latency, test->group, test->category);
+        printf("%-30s %-12.2f %-12.2f %-12.2f %-15s %s\\n",
+               test->name, cycles_avg, cpi, per_instruction, test->group, test->category);
         
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(2));
     }}
     
     printf("\\n========================================================\\n");
     printf("SUMMARY STATISTICS\\n");
     printf("========================================================\\n");
-    printf("  • Average latency across all tests: %.2f cycles\\n", total_latency / NUM_TESTS);
-    printf("  • Minimum latency: %.2f cycles\\n", min_latency);
-    printf("  • Maximum latency: %.2f cycles\\n", max_latency);
+    printf("  • Average cycles per instruction: %.2f\\n", total_latency / NUM_TESTS);
+    printf("  • Minimum cycles per instruction: %.2f\\n", min_latency);
+    printf("  • Maximum cycles per instruction: %.2f\\n", max_latency);
     printf("\\n");
 }}
 
-// ... (rest of runner functions from previous version) ...
+void run_category_tests(const char* category) {{
+    printf("\\nRunning tests for category: %s\\n", category);
+    printf("------------------------------------------------\\n");
+    
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        const latency_test_t* test = &all_tests[i];
+        if (strcmp(test->category, category) == 0) {{
+            float cycles = test->function();
+            float per_instruction = cycles / (float)test->iterations / (float)test->instruction_count;
+            printf("%-30s: %8.2f cycles/op\\n", test->name, per_instruction);
+        }}
+    }}
+}}
+
+void print_statistical_summary(void) {{
+    float cpi_values[NUM_TESTS];
+    int count = 0;
+    float sum = 0, sum_sq = 0;
+    
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        float cycles = all_tests[i].function();
+        float cpi = cycles / (float)all_tests[i].instruction_count;
+        cpi_values[count++] = cpi;
+        sum += cpi;
+        sum_sq += cpi * cpi;
+    }}
+    
+    float mean = sum / count;
+    float variance = (sum_sq - (sum * sum)/count) / (count - 1);
+    float stddev = sqrtf(variance);
+    
+    printf("\\nStatistical Summary:\\n");
+    printf("  Mean CPI: %.2f\\n", mean);
+    printf("  Std Dev: %.2f\\n", stddev);
+}}
 """
     
     with open(os.path.join(MAIN_DIR, "esp32c6_latency_tests.c"), "w") as f:
@@ -950,16 +1356,18 @@ void app_main(void) {
     printf("╔════════════════════════════════════════════════════════════╗\\n");
     printf("║     ESP32-C6 INSTRUCTION LATENCY BENCHMARKING SUITE        ║\\n");
     printf("║              Bachelorarbeit - Umfassende Analyse           ║\\n");
+    printf("║           Single + Multi-Instruction Tests (10-50 ops)     ║\\n");
     printf("╚════════════════════════════════════════════════════════════╝\\n");
     printf("\\n");
     
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(1000));
     
     // Komplette Test-Suite
     run_all_latency_tests();
     
     printf("\\n✓ All tests completed successfully!\\n");
     printf("  Total tests executed: %d\\n", LATENCY_TEST_COUNT);
+    printf("  Multi-instruction tests: %d\\n", MULTI_TEST_COUNT);
     
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(30000));
@@ -989,34 +1397,50 @@ void app_main(void) {
     return test_files
 
 # ============================================================================
-# 6. MAIN GENERATOR
+# 8. MAIN GENERATOR
 # ============================================================================
 
 def generate_complete_test_suite():
-    """Hauptfunktion: Generiert Test-Suite für Bachelorarbeit."""
+    """Hauptfunktion: Generiert Test-Suite mit SINGLE + MULTI instruction tests."""
     
     print("\n" + "=" * 80)
     print("  ESP32-C6 INSTRUCTION LATENCY TEST GENERATOR".center(80))
     print("  Bachelorarbeit - Umfassende Benchmarking-Analyse".center(80))
+    print("  MIT: Single-Instruction Tests + Multi-Instruction Tests".center(80))
+    print("  FIXED: a3 wird in JEDER Iteration initialisiert!".center(80))
     print("=" * 80)
     
-    # 1. Generiere Single-Instruction Varianten
-    print("\n[1/4] Generating SINGLE instruction tests...")
+    # 1. ORIGINAL: Single-Instruction Tests (gefixt: kein a3 als src1)
+    print("\n[1/5] Generating SINGLE instruction tests (1 op)...")
     single_tests = SingleInstructionTestGenerator.generate_all_single_instruction_tests()
     print(f"      → {len(single_tests)} single instruction test variants")
     
-    # 2. Generiere Sequenz-Tests
-    print("\n[2/4] Generating SEQUENCE tests...")
+    # 2. ORIGINAL: Sequence Tests (gefixt: kein a3 als src1)
+    print("\n[2/5] Generating SEQUENCE tests (2-6 ops)...")
     sequence_tests = SequenceTestGenerator.generate_all_sequence_tests()
     print(f"      → {len(sequence_tests)} sequence test variants")
     
-    # 3. Kombiniere alle Tests
-    print("\n[3/4] Combining test suite...")
-    all_tests = single_tests + sequence_tests
-    print(f"      → Total tests: {len(all_tests)}")
+    # 3. NEU: Multi-Instruction Tests (10,20,30 ops)
+    print("\n[3/5] Generating MULTI-INSTRUCTION tests (10,20,30 ops)...")
+    multi_tests = MultiInstructionTestGenerator.generate_multi_instruction_tests()
+    print(f"      → {len(multi_tests)} multi-instruction test variants")
     
-    # 4. Generiere alle Test-Files
-    print("\n[4/4] Generating test files...")
+    # 4. NEU: Long Sequence Tests (20-50 ops)
+    print("\n[4/5] Generating LONG SEQUENCE tests (20-50 ops)...")
+    long_tests = MultiSequenceTestGenerator.generate_multi_sequence_tests()
+    print(f"      → {len(long_tests)} long sequence test variants")
+    
+    # 5. Kombiniere ALLE Tests
+    print("\n[5/5] Combining ALL test suites...")
+    all_tests = single_tests + sequence_tests + multi_tests + long_tests
+    print(f"      → TOTAL TESTS: {len(all_tests)}")
+    print(f"      → Single: {len(single_tests)}")
+    print(f"      → Sequence: {len(sequence_tests)}")
+    print(f"      → Multi: {len(multi_tests)}")
+    print(f"      → Long: {len(long_tests)}")
+    
+    # Generiere alle Test-Files
+    print("\nGenerating test files...")
     test_files = generate_all_test_files(all_tests)
     
     print("\n" + "=" * 80)
@@ -1025,13 +1449,22 @@ def generate_complete_test_suite():
     
     print(f"\n📊 FINAL TEST STATISTICS:")
     print(f"   • TOTAL TESTS: {len(all_tests)}")
-    print(f"   • Single instruction variants: {len(single_tests)}")
-    print(f"   • Sequence tests: {len(sequence_tests)}")
+    print(f"   • Single instruction (1 op): {len(single_tests)}")
+    print(f"   • Short sequences (2-6 ops): {len(sequence_tests)}")
+    print(f"   • Multi-instruction (10-30 ops): {len(multi_tests)}")
+    print(f"   • Long sequences (20-50 ops): {len(long_tests)}")
+    
+    lengths = [t["instruction_count"] for t in all_tests]
+    print(f"\n📊 INSTRUCTION COUNT DISTRIBUTION:")
+    print(f"   • Min: {min(lengths)} op")
+    print(f"   • Max: {max(lengths)} ops")
+    print(f"   • Avg: {sum(lengths)/len(lengths):.1f} ops")
+    print(f"   • Total instruction executions: {sum([t['instruction_count'] * t['iterations'] for t in all_tests])}")
     
     return all_tests
 
 # ============================================================================
-# 7. MAIN
+# 9. MAIN
 # ============================================================================
 
 if __name__ == "__main__":
