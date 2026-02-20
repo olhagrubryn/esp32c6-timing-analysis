@@ -1,630 +1,785 @@
 #!/usr/bin/env python3
-# esp32c6_port_usage_generator.py
+# scripts/generate_throughput_tests.py - ESP32-C6 Instruction Throughput Test Generator
+# BASIEREND AUF: Intel Definition of Throughput (Kategorien aus Skript 1)
+# FILE STRUCTURE: Verbesserte Struktur aus Skript 2
 
 import os
+import sys
+import random
+from collections import defaultdict
 
 # ============================================================================
-# 1. GENERATOR CLASSES
+# Pfad-Konfiguration
 # ============================================================================
 
-class PortUsageGenerator:
-    """Base class for port usage test generation - Updated for ESP32-C6 (RISC-V)."""
-    
-    @staticmethod
-    def generate_alu_instruction_pairs():
-        """ALU Instruction Pairs for Port Usage Tests."""
-        test_groups = [
-            {
-                "name": "ADD_ADD",
-                "instructions": [
-                    ("add", "t0, t1, t2"),
-                    ("add", "t3, t4, t5"),
-                ],
-                "iterations": 2000,
-                "description": "ADD + ADD"
-            },
-            {
-                "name": "ADD_SUB",
-                "instructions": [
-                    ("add", "t0, t1, t2"),
-                    ("sub", "t3, t4, t5"),
-                ],
-                "iterations": 2000,
-                "description": "ADD + SUB"
-            },
-            {
-                "name": "AND_OR",
-                "instructions": [
-                    ("and", "t0, t1, t2"),
-                    ("or",  "t3, t4, t5"),
-                ],
-                "iterations": 2000,
-                "description": "AND + OR"
-            },
-            {
-                "name": "XOR_SLL",
-                "instructions": [
-                    ("xor", "t0, t1, t2"),
-                    ("sll", "t3, t4, t5"),
-                ],
-                "iterations": 2000,
-                "description": "XOR + Shift"
-            },
-        ]
-        return test_groups
-    
-    @staticmethod
-    def generate_memory_alu_pairs():
-        """Memory + ALU Instruction Pairs."""
-        test_groups = [
-            {
-                "name": "LW_ADD",
-                "instructions": [
-                    ("lw",  "t0, 0(t1)"),
-                    ("add", "t3, t4, t5"),
-                ],
-                "iterations": 1500,
-                "description": "Load + ADD "
-            },
-            {
-                "name": "SW_SUB",
-                "instructions": [
-                    ("sw",  "t0, 0(t1)"),
-                    ("sub", "t3, t4, t5"),
-                ],
-                "iterations": 1500,
-                "description": "Store + SUB"
-            },
-            {
-                "name": "LW_LW",
-                "instructions": [
-                    ("lw", "t0, 0(t1)"),
-                    ("lw", "t3, 4(t4)"),
-                ],
-                "iterations": 1500,
-                "description": "Load + Load "
-            },
-            {
-                "name": "SW_SW",
-                "instructions": [
-                    ("sw", "t0, 0(t1)"),
-                    ("sw", "t3, 4(t4)"),
-                ],
-                "iterations": 1500,
-                "description": "Store + Store"
-            },
-        ]
-        return test_groups
-    
-    @staticmethod
-    def generate_mul_div_pairs():
-        """Multiplication/Division Instruction Pairs."""
-        test_groups = [
-            {
-                "name": "MUL_ADD",
-                "instructions": [
-                    ("mul", "t0, t1, t2"),
-                    ("add", "t3, t4, t5"),
-                ],
-                "iterations": 1000,
-                "description": "Multiply + ADD "
-            },
-            {
-                "name": "DIV_SUB",
-                "instructions": [
-                    ("div", "t0, t1, t2"),
-                    ("sub", "t3, t4, t5"),
-                ],
-                "iterations": 500,
-                "description": "Divide + SUB "
-            },
-            {
-                "name": "MUL_MUL",
-                "instructions": [
-                    ("mul", "t0, t1, t2"),
-                    ("mul", "t3, t4, t5"),
-                ],
-                "iterations": 800,
-                "description": "Multiply + Multiply "
-            },
-        ]
-        return test_groups
-    
-    @staticmethod
-    def generate_control_pairs():
-        """Control/Flow Instruction Pairs."""
-        test_groups = [
-            {
-                "name": "NOP_NOP",
-                "instructions": [
-                    ("nop", ""),
-                    ("nop", ""),
-                ],
-                "iterations": 3000,
-                "description": "NOP + NOP "
-            },
-            {
-                "name": "ADDI_ADDI",
-                "instructions": [
-                    ("addi", "t0, t1, 1"),
-                    ("addi", "t3, t4, 2"),
-                ],
-                "iterations": 2000,
-                "description": "ADDI + ADDI "
-            },
-            {
-                "name": "LI_LI",
-                "instructions": [
-                    ("li", "t0, 0x1234"),
-                    ("li", "t3, 0x5678"),
-                ],
-                "iterations": 2000,
-                "description": "Load Im + Load Im"
-            },
-        ]
-        return test_groups
-    
-    @staticmethod
-    def generate_mixed_pairs():
-        """Mixed Instruction Type Pairs."""
-        test_groups = [
-            {
-                "name": "LW_MUL",
-                "instructions": [
-                    ("lw",  "t0, 0(t1)"),
-                    ("mul", "t3, t4, t5"),
-                ],
-                "iterations": 1200,
-                "description": "Load + Multiply "
-            },
-            {
-                "name": "SW_DIV",
-                "instructions": [
-                    ("sw",  "t0, 0(t1)"),
-                    ("div", "t3, t4, t5"),
-                ],
-                "iterations": 800,
-                "description": "Store + Divide "
-            },
-            {
-                "name": "ADD_SW",
-                "instructions": [
-                    ("add", "t0, t1, t2"),
-                    ("sw",  "t3, 0(t4)"),
-                ],
-                "iterations": 1500,
-                "description": "ADD + Store "
-            },
-            {
-                "name": "MUL_LW",
-                "instructions": [
-                    ("mul", "t0, t1, t2"),
-                    ("lw",  "t3, 0(t4)"),
-                ],
-                "iterations": 1200,
-                "description": "Multiply + Load "
-            },
-        ]
-        return test_groups
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+
+MAIN_DIR = os.path.join(PROJECT_ROOT, "main")
+TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
 
 # ============================================================================
-# 2. TEMPLATES
+# RISC-V REGISTER (wie Skript 1, aber mit rotate_register aus Skript 2)
 # ============================================================================
-TEST_FUNCTION_TEMPLATE = """float {test_name}(void) {{
+
+class RISCVRegisters:
+    """Definiert gültige Register für ESP32-C6."""
+    
+    TEMP_REGS = ["a2", "a4", "a5", "a6", "a7"]
+    BASE_REG = "a3"  # Basisregister für Speicherzugriffe - NIEMALS überschreiben!
+    DST_REGS = ["a2", "a4", "a5", "a6", "a7"]
+    SRC_REGS = ["a2", "a4", "a5", "a6", "a7"]
+    
+    @staticmethod
+    def get_independent_registers(count):
+        """Generiert unabhängige Register (keine RAW-Dependencies)."""
+        regs = RISCVRegisters.TEMP_REGS[:]
+        if count <= len(regs):
+            return regs[:count]
+        return [regs[i % len(regs)] for i in range(count)]
+    
+    @staticmethod
+    def rotate_register(base_reg, offset):
+        """Rotiert Register für Throughput-Tests."""
+        regs = RISCVRegisters.TEMP_REGS
+        if base_reg in regs:
+            idx = regs.index(base_reg)
+            return regs[(idx + offset) % len(regs)]
+        return base_reg
+
+# ============================================================================
+# RISC-V INSTRUKTIONEN (wie Skript 1)
+# ============================================================================
+
+class RISCVInstructions:
+    """Datenbank aller RISC-V Instruktionen."""
+    
+    @staticmethod
+    def get_all_instructions():
+        return {
+            "add":  "add {dst}, {src1}, {src2}",
+            "sub":  "sub {dst}, {src1}, {src2}",
+            "xor":  "xor {dst}, {src1}, {src2}",
+            "or":   "or {dst}, {src1}, {src2}",
+            "and":  "and {dst}, {src1}, {src2}",
+            "addi": "addi {dst}, {src1}, {imm}",
+            "lw":   "lw {dst}, {offset}({base})",
+            "sw":   "sw {src}, {offset}({base})",
+            "mul":  "mul {dst}, {src1}, {src2}",
+            "div":  "div {dst}, {src1}, {src2}",
+        }
+    
+    @staticmethod
+    def get_throughput_characteristic(insn_name):
+        """
+        Gibt die Durchsatz-Charakteristik einer Instruktion zurück (aus Skript 1).
+        """
+        characteristics = {
+            "add": "THROUGHPUT_SINGLE_ISSUE",
+            "sub": "THROUGHPUT_SINGLE_ISSUE",
+            "xor": "THROUGHPUT_SINGLE_ISSUE",
+            "or": "THROUGHPUT_SINGLE_ISSUE",
+            "and": "THROUGHPUT_SINGLE_ISSUE",
+            "addi": "THROUGHPUT_SINGLE_ISSUE",
+            "lw": "THROUGHPUT_MEMORY",
+            "sw": "THROUGHPUT_MEMORY",
+            "mul": "THROUGHPUT_MULTI_CYCLE",
+            "div": "THROUGHPUT_MULTI_CYCLE",
+        }
+        return characteristics.get(insn_name, "THROUGHPUT_SINGLE_ISSUE")
+
+# ============================================================================
+# INTEL THROUGHPUT TESTS (aus Skript 1)
+# ============================================================================
+
+class IntelThroughputGenerator:
+    """
+    Generiert Throughput-Tests nach Intel-Definition (aus Skript 1).
+    """
+    
+    @staticmethod
+    def generate_throughput_test(insn_name, insn_template):
+        """Generiert Throughput-Test für eine Instruktion."""
+        tests = []
+        
+        instance_counts = [4, 8, 16]
+        throughput_cat = RISCVInstructions.get_throughput_characteristic(insn_name)
+        
+        iterations = {
+            "THROUGHPUT_SINGLE_ISSUE": 5000,
+            "THROUGHPUT_MEMORY": 4000,
+            "THROUGHPUT_MULTI_CYCLE": 2000,
+        }.get(throughput_cat, 3000)
+        
+        for count in instance_counts:
+            registers = RISCVRegisters.get_independent_registers(count)
+            instructions = []
+            
+            for i in range(count):
+                dst = registers[i % len(registers)]
+                
+                if insn_name in ["lw", "sw"]:
+                    # Sicherer Offset: Nur innerhalb des 64-Byte Buffers (0-60) in 4-Byte Schritten
+                    offset = (i * 4) % 60
+                    if insn_name == "lw":
+                        instr = f"lw {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                    else:
+                        instr = f"sw {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                elif insn_name == "addi":
+                    src1 = registers[(i + 1) % len(registers)]
+                    instr = f"addi {dst}, {src1}, 1"
+                else:
+                    src1 = registers[(i + 1) % len(registers)]
+                    src2 = registers[(i + 2) % len(registers)]
+                    instr = insn_template.format(dst=dst, src1=src1, src2=src2)
+                
+                instructions.append((insn_name, instr))
+            
+            test = {
+                "name": f"THROUGHPUT_{insn_name}_{count}",
+                "instructions": instructions,
+                "iterations": max(1, iterations // count),
+                "description": f"{count}x {insn_name} (unabhängig)",
+                "category": throughput_cat,
+                "instruction_count": count,
+                "sequence_length": count,
+                "group": "throughput_base"
+            }
+            tests.append(test)
+        
+        return tests
+    
+    @staticmethod
+    def generate_port_conflict_test(insn_name, insn_template):
+        """Spezieller Test für Port-Konflikte (aus Skript 1)."""
+        tests = []
+        
+        for count in [4, 8]:
+            registers = RISCVRegisters.get_independent_registers(count)
+            instructions = []
+            
+            for i in range(count):
+                dst = registers[i % len(registers)]
+                
+                if insn_name == "add":
+                    src1 = registers[(i + 1) % len(registers)]
+                    src2 = registers[(i + 2) % len(registers)]
+                    instr = f"add {dst}, {src1}, {src2}"
+                elif insn_name == "mul":
+                    src1 = registers[(i + 1) % len(registers)]
+                    src2 = registers[(i + 2) % len(registers)]
+                    instr = f"mul {dst}, {src1}, {src2}"
+                else:
+                    continue
+                
+                instructions.append((insn_name, instr))
+            
+            if instructions:
+                test = {
+                    "name": f"PORT_CONFLICT_{insn_name}_{count}",
+                    "instructions": instructions,
+                    "iterations": max(1, 2000 // count),
+                    "description": f"Port conflict: {count}x {insn_name}",
+                    "category": "THROUGHPUT_PORT_CONFLICT",
+                    "instruction_count": count,
+                    "sequence_length": count,
+                    "group": "throughput_port"
+                }
+                tests.append(test)
+        
+        return tests
+
+# ============================================================================
+# DEPENDENCY COMPARISON TESTS (aus Skript 1) - VOLLSTÄNDIG KORRIGIERT
+# ============================================================================
+
+class ThroughputComparisonGenerator:
+    """Vergleicht dependency-free vs dependent throughput (aus Skript 1)."""
+    
+    @staticmethod
+    def generate_comparison_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        test_insns = ["add", "mul", "lw"]
+        
+        for insn_name in test_insns:
+            template = all_insn[insn_name]
+            
+            # Dependency-Free
+            for count in [4, 8]:
+                registers = RISCVRegisters.get_independent_registers(count)
+                instructions = []
+                
+                for i in range(count):
+                    dst = registers[i % len(registers)]
+                    
+                    if insn_name == "lw":
+                        # Sicherer Offset: 0-60 in 4-Byte Schritten
+                        offset = (i * 4) % 60
+                        instr = f"lw {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                    else:
+                        src1 = registers[(i + 1) % len(registers)]
+                        src2 = registers[(i + 2) % len(registers)]
+                        instr = template.format(dst=dst, src1=src1, src2=src2)
+                    
+                    instructions.append((insn_name, instr))
+                
+                test = {
+                    "name": f"DEP_FREE_{insn_name}_{count}",
+                    "instructions": instructions,
+                    "iterations": max(1, 3000 // count),
+                    "description": f"Dependency-free: {count}x {insn_name}",
+                    "category": "THROUGHPUT_DEPENDENCY_FREE",
+                    "instruction_count": count,
+                    "sequence_length": count,
+                    "group": "throughput_dependency"
+                }
+                tests.append(test)
+            
+            # Dependent (RAW chain) - KOMPLETT ÜBERARBEITET
+            for count in [4, 8]:
+                instructions = []
+                
+                if insn_name == "lw":
+                    # Für Loads: KEINE RAW-Kette, da wir das Basisregister nicht überschreiben dürfen
+                    # Stattdessen: Unabhängige Loads mit verschiedenen Destinationen
+                    # Das ist der sicherste Ansatz für Load-Tests
+                    for i in range(count):
+                        dst = RISCVRegisters.TEMP_REGS[i % len(RISCVRegisters.TEMP_REGS)]
+                        offset = (i * 8) % 56  # Genug Abstand zwischen den Loads
+                        instr = f"lw {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                        instructions.append((insn_name, instr))
+                else:
+                    # Für ALU-Operationen: Echte RAW-Kette
+                    last_dst = "a2"
+                    for i in range(count):
+                        dst = RISCVRegisters.TEMP_REGS[i % len(RISCVRegisters.TEMP_REGS)]
+                        src1 = last_dst
+                        src2 = RISCVRegisters.TEMP_REGS[(i + 2) % len(RISCVRegisters.TEMP_REGS)]
+                        instr = template.format(dst=dst, src1=src1, src2=src2)
+                        instructions.append((insn_name, instr))
+                        last_dst = dst
+                
+                test = {
+                    "name": f"DEP_RAW_{insn_name}_{count}",
+                    "instructions": instructions,
+                    "iterations": max(1, 3000 // count),
+                    "description": f"RAW dependent: {count}x {insn_name}",
+                    "category": "THROUGHPUT_DEPENDENT" if insn_name != "lw" else "THROUGHPUT_MEMORY",
+                    "instruction_count": count,
+                    "sequence_length": count,
+                    "group": "throughput_dependency"
+                }
+                tests.append(test)
+        
+        return tests
+
+# ============================================================================
+# BACK-TO-BACK TESTS (aus Skript 1)
+# ============================================================================
+
+class BackToBackGenerator:
+    """Testet Back-to-Back Issue Rate (aus Skript 1)."""
+    
+    @staticmethod
+    def generate_back_to_back_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        
+        sequences = [
+            (["add", "add", "add", "add"], "ADD_ONLY"),
+            (["lw", "add", "lw", "add"], "LOAD_ALU_MIX"),
+            (["mul", "add", "mul", "add"], "MUL_ALU_MIX"),
+        ]
+        
+        for seq, name in sequences:
+            for repeat in [2, 4]:
+                instructions = []
+                count = len(seq) * repeat
+                registers = RISCVRegisters.get_independent_registers(count)
+                
+                for i in range(count):
+                    insn = seq[i % len(seq)]
+                    dst = registers[i % len(registers)]
+                    
+                    if insn == "lw":
+                        # Sicherer Offset für Loads
+                        offset = (i * 4) % 60
+                        instr = f"lw {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                    elif insn == "add":
+                        src1 = registers[(i + 1) % len(registers)]
+                        src2 = registers[(i + 2) % len(registers)]
+                        instr = f"add {dst}, {src1}, {src2}"
+                    elif insn == "mul":
+                        src1 = registers[(i + 1) % len(registers)]
+                        src2 = registers[(i + 2) % len(registers)]
+                        instr = f"mul {dst}, {src1}, {src2}"
+                    else:
+                        continue
+                    
+                    instructions.append((insn, instr))
+                
+                test = {
+                    "name": f"BACK2BACK_{name}_{count}",
+                    "instructions": instructions,
+                    "iterations": max(1, 2000 // count),
+                    "description": f"Back-to-back: {name} ({count} ops)",
+                    "category": "THROUGHPUT_BACK_TO_BACK",
+                    "instruction_count": count,
+                    "sequence_length": count,
+                    "group": "throughput_back2back"
+                }
+                tests.append(test)
+        
+        return tests
+
+# ============================================================================
+# C CODE GENERATOR (aus Skript 2, aber mit CPI statt Cycles/Gap)
+# ============================================================================
+
+def generate_test_function(test):
+    """Generiert C-Code für Throughput-Test (mit CPI als Ergebnis)."""
+    
+    safe_name = test['name'].replace('-', '_').replace('.', '_')
+    func_name = f"test_{safe_name}"
+    
+    instruction_lines = []
+    for _, operands in test["instructions"]:
+        instruction_lines.append(f'            "{operands}\\n"')
+    
+    instruction_block = "".join(instruction_lines)
+    
+    seq_len = test.get("sequence_length", test["instruction_count"])
+    
+    # Throughput-spezifischer Template (gibt CPI zurück)
+    func_template = f"""float {func_name}(void) {{
     float total_cycles = 0;
     
-    // Sicherer Puffer im RAM
-    static uint32_t safe_buffer[32] __attribute__((aligned(32)));
+    // Safe buffer in RAM - größer und mit definierten Werten
+    static uint32_t safe_buffer[256] __attribute__((aligned(64))) = {{ 0 }};  // Mit Nullen initialisiert
+    
+    // Buffer mit definierten Werten füllen
+    for (int i = 0; i < 256; i += 4) {{
+        safe_buffer[i] = 0x11111111;
+        safe_buffer[i+1] = 0x22222222;
+        safe_buffer[i+2] = 0x33333333;
+        safe_buffer[i+3] = 0x44444444;
+    }}
+    
     uint32_t *ptr = safe_buffer;
+    
+    // Initial values for registers
+    uint32_t r2_val = 0x12345678;
+    uint32_t r4_val = 0xABCDEF01;
+    uint32_t r5_val = 0xFEDCBA98;
+    uint32_t r6_val = 0x0F0F0F0F;
+    uint32_t r7_val = 0xF0F0F0F0;
     
     portENTER_CRITICAL(&test_mutex);
     
-    for (int iter = 0; iter < {iterations}; iter++) {{
+    for (int iter = 0; iter < {test["iterations"]}; iter++) {{
         uint32_t t_start, t_end;
         __asm__ __volatile__ (
-            "mv t1, %[mem_ptr]\\n"   // Lade Basisadresse in t1
-            "mv t4, %[mem_ptr]\\n"   // Lade Basisadresse in t4
-            "fence\\n"               
-            "csrr %[t_start], 0x7E2\\n" // Read start cycle
+            "mv a3, %[mem_ptr]\\n"      // a3 = gültiger Speicherpointer (NIEMALS überschreiben!)
+            "mv a2, %[r2_val]\\n"
+            "mv a4, %[r4_val]\\n"
+            "mv a5, %[r5_val]\\n"
+            "mv a6, %[r6_val]\\n"
+            "mv a7, %[r7_val]\\n"
+            "fence\\n"
+            "csrr %[t_start], 0x7E2\\n" // Start cycle count
+            
 {instruction_block}
-            "csrr %[t_end], 0x7E2\\n"   // Read end cycle
+            
+            "csrr %[t_end], 0x7E2\\n"   // End cycle count
             "fence\\n"
             : [t_start] "=r"(t_start), [t_end] "=r"(t_end)
-            : [mem_ptr] "r"(ptr)
-            : "t0", "t1", "t2", "t3", "t4", "t5", "memory" 
+            : [mem_ptr] "r"(ptr),
+              [r2_val] "r"(r2_val),
+              [r4_val] "r"(r4_val),
+              [r5_val] "r"(r5_val),
+              [r6_val] "r"(r6_val),
+              [r7_val] "r"(r7_val)
+            : "a2", "a3", "a4", "a5", "a6", "a7", "memory"
         );
         total_cycles += (float)(t_end - t_start);
     }}
     
     portEXIT_CRITICAL(&test_mutex);
-    return total_cycles;
+    
+    // Return CYCLES PER INSTRUCTION (CPI) - Intel Definition
+    return total_cycles / (float)({test["iterations"]} * {test["instruction_count"]});
 }}
 """
+    return func_name, func_template
 
-HEADER_TEMPLATE = """#ifndef ESP32C6_PORT_USAGE_TESTS_H
-#define ESP32C6_PORT_USAGE_TESTS_H
+# ============================================================================
+# FILE GENERATOR (aus Skript 2)
+# ============================================================================
+
+def ensure_directories():
+    """Stellt sicher, dass alle benötigten Verzeichnisse existieren."""
+    os.makedirs(MAIN_DIR, exist_ok=True)
+    os.makedirs(TESTS_DIR, exist_ok=True)
+    
+    os.makedirs(os.path.join(TESTS_DIR, "throughput"), exist_ok=True)
+    print(f"  ✓ Created throughput test directories")
+
+def generate_test_files(all_tests):
+    """Generiert alle Test-Dateien mit der Struktur aus Skript 2."""
+    
+    ensure_directories()
+    
+    test_files = []
+    
+    print(f"\n  Generating {len(all_tests)} throughput test files...")
+    
+    # Für jeden Test eine Datei generieren
+    for test in all_tests:
+        safe_name = test['name'].replace('-', '_').replace('.', '_')
+        func_name, func_code = generate_test_function(test)
+        
+        # Ein gemeinsames Verzeichnis für alle Throughput-Tests
+        subdir = "throughput"
+        subdir_path = os.path.join(TESTS_DIR, subdir)
+        
+        c_filename = f"{safe_name}.c"
+        h_filename = f"{safe_name}.h"
+        test_path = os.path.join(subdir_path, c_filename)
+        header_path = os.path.join(subdir_path, h_filename)
+        
+        # Header-Datei
+        header_guard = f"THROUGHPUT_{safe_name.upper()}_H"
+        header_content = f"""#ifndef {header_guard}
+#define {header_guard}
+
+float {func_name}(void);
+
+#endif /* {header_guard} */
+"""
+        
+        with open(header_path, "w") as f:
+            f.write(header_content)
+        
+        # C-Datei
+        c_content = f"""#include <stdio.h>
+#include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/portmacro.h"
+#include "../../main/esp32c6_throughput.h"
+
+extern portMUX_TYPE test_mutex;
+
+{func_code}
+"""
+        
+        with open(test_path, "w") as f:
+            f.write(c_content)
+        
+        test_files.append((safe_name, test, c_filename, h_filename, subdir))
+        print(f"    • Generated: tests/{subdir}/{c_filename}")
+    
+    # Zentrale Header-Datei
+    central_header = """#ifndef ESP32C6_THROUGHPUT_H
+#define ESP32C6_THROUGHPUT_H
 
 #include <stdint.h>
 #include "freertos/portmacro.h"
 
 extern portMUX_TYPE test_mutex;
 
-// Initialization
+// Test-Funktionen - generiert
+"""
+    
+    for safe_name, test, _, h_file, subdir in test_files:
+        central_header += f'#include "../tests/{subdir}/{h_file}"\n'
+    
+    central_header += """
+// Initialisierung
 void init_performance_counters(void);
 
-// Test function declarations
-{function_declarations}
+// Test-Runner
+void run_all_throughput_tests(void);
+void run_throughput_category(const char* category);
+void print_throughput_analysis(void);
 
-// Test runner
-void run_all_port_usage_tests(void);
-void print_port_csv_results(void);
-void print_port_analysis(void);
-
-#endif // ESP32C6_PORT_USAGE_TESTS_H
+#endif /* ESP32C6_THROUGHPUT_H */
 """
-
-MAIN_TEMPLATE = """#include <stdio.h>
-#include <inttypes.h>
+    
+    with open(os.path.join(MAIN_DIR, "esp32c6_throughput.h"), "w") as f:
+        f.write(central_header)
+    
+    # Test-Runner (mit allen Tests)
+    test_entries = []
+    for safe_name, test, _, _, _ in test_files:
+        test_entries.append(
+            f'    {{"{test["name"]}", test_{safe_name}, {test["iterations"]}, '
+            f'{test["instruction_count"]}, {test.get("sequence_length", test["instruction_count"])}, '
+            f'"{test["description"]}", "{test["category"]}", "{test["group"]}"}}'
+        )
+    
+    test_entries_str = ",\n".join(test_entries)
+    
+    # Kategorien aus Skript 1
+    categories_list = [
+        "THROUGHPUT_SINGLE_ISSUE",
+        "THROUGHPUT_MULTI_CYCLE", 
+        "THROUGHPUT_MEMORY",
+        "THROUGHPUT_PORT_CONFLICT",
+        "THROUGHPUT_DEPENDENCY_FREE",
+        "THROUGHPUT_DEPENDENT",
+        "THROUGHPUT_BACK_TO_BACK"
+    ]
+    
+    categories_array = ",\n    ".join([f'"{cat}"' for cat in categories_list])
+    
+    main_content = f"""#include <stdio.h>
 #include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp32c6_port_usage_tests.h"
+#include "esp32c6_throughput.h"
 
 portMUX_TYPE test_mutex = portMUX_INITIALIZER_UNLOCKED;
-
-void init_performance_counters(void) {{
-    __asm__ __volatile__ (
-        "li a2, 1\\n"
-        "csrw 0x7E0, a2\\n"   // Enable cycle counter
-        "csrw 0x7E1, a2\\n"   // Enable performance counters
-        ::: "a2"
-    );
-}}
-
-{test_functions}
-
-// ============================================================================
-// TEST DEFINITIONS AND RUNNER
-// ============================================================================
 
 typedef struct {{
     const char* name;
     float (*function)(void);
-    uint32_t iterations;
-    uint32_t instruction_count;
+    int iterations;
+    int instruction_count;
+    int sequence_length;
     const char* description;
     const char* category;
-}} port_test_t;
+    const char* group;
+}} throughput_test_t;
 
-static const port_test_t all_tests[] = {{
-{test_definitions}
+static const throughput_test_t all_tests[] = {{
+{test_entries_str}
 }};
 
-#define NUM_TESTS (sizeof(all_tests) / sizeof(all_tests[0]))
+// Anzahl der Tests für main.c
+const int NUM_TESTS = sizeof(all_tests) / sizeof(all_tests[0]);
 
-void run_all_port_usage_tests(void) {{
-    printf("\\n================================================\\n");
-    printf("ESP32-C6 PORT USAGE TESTS\\n");
-    printf("================================================\\n\\n");
+void init_performance_counters(void) {{
+    __asm__ __volatile__ (
+        "li a2, 1\\n"
+        "csrw 0x7E0, a2\\n"
+        "csrw 0x7E1, a2\\n"
+        ::: "a2"
+    );
+}}
+
+void run_all_throughput_tests(void) {{
+    printf("\\n========================================================\\n");
+    printf("ESP32-C6 THROUGHPUT TESTS (Intel Definition)\\n");
+    printf("========================================================\\n\\n");
     
-    init_performance_counters();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    printf("%-30s %-8s %-12s %s\\n", "Test", "InstCount", "CPI", "Category");
+    printf("%-30s %-8s %-12s %s\\n", "----", "--------", "---", "--------");
     
-    printf("%-15s %-25s %-12s %-8s %-10s\\n", 
-           "Test", "Description", "Cycles", "CPI", "Throughput");
-    printf("%-15s %-25s %-12s %-8s %-10s\\n",
-           "----", "-----------", "------", "---", "---------");
+    float total_cpi = 0;
+    int test_count = 0;
     
     for (int i = 0; i < NUM_TESTS; i++) {{
-        const port_test_t* test = &all_tests[i];
-        
-        // Multiple runs for accuracy
-        float min_cycles = 1000000.0f;
-        for (int run = 0; run < 5; run++) {{
-            float cycles = test->function();
-            if (cycles < min_cycles) min_cycles = cycles;
-            vTaskDelay(pdMS_TO_TICKS(10));
+        float cpi = all_tests[i].function();
+        float ipc = 1.0f / cpi;
+        printf("%-30s %-8d %-12.3f %s\\n", 
+               all_tests[i].name, 
+               all_tests[i].instruction_count,
+               cpi,
+               all_tests[i].category);
+        total_cpi += cpi;
+        test_count++;
+    }}
+    
+    printf("\\nSummary: %d tests, average CPI = %.3f, average IPC = %.3f\\n", 
+           test_count, total_cpi / test_count, 1.0f / (total_cpi / test_count));
+}}
+
+void run_throughput_category(const char* category) {{
+    printf("\\nCategory: %s\\n", category);
+    printf("%-30s %-8s %-12s %-10s\\n", "Test", "InstCount", "CPI", "IPC");
+    printf("%-30s %-8s %-12s %-10s\\n", "----", "--------", "---", "---");
+    
+    float total = 0;
+    int count = 0;
+    
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].category, category) == 0) {{
+            float cpi = all_tests[i].function();
+            float ipc = 1.0f / cpi;
+            printf("%-30s %-8d %-12.3f %-10.3f\\n", 
+                   all_tests[i].name, 
+                   all_tests[i].instruction_count,
+                   cpi, ipc);
+            total += cpi;
+            count++;
         }}
-        
-        float cpi = min_cycles / (float)(test->instruction_count * test->iterations);
-        float throughput = 1.0 / cpi;
-        
-        printf("%-15s %-25s %-12.2f %-8.3f %-10.3f\\n",
-               test->name, test->description, min_cycles, cpi, throughput);
-        
-        vTaskDelay(pdMS_TO_TICKS(30));
+    }}
+    
+    if (count > 0) {{
+        printf("\\nAverage for %s: CPI = %.3f, IPC = %.3f\\n", 
+               category, total / count, 1.0f / (total / count));
     }}
 }}
 
-void print_port_csv_results(void) {{
-    FILE* csv_file = fopen("/sd/port_usage_results.csv", "w");
-    if (csv_file == NULL) {{
-        printf("Error opening CSV file!\\n");
-        return;
-    }}
+void print_throughput_analysis(void) {{
+    printf("\\n========================================================\\n");
+    printf("THROUGHPUT ANALYSIS BY CATEGORY\\n");
+    printf("========================================================\\n");
     
-    fprintf(csv_file, "Test Name,Category,Cycles,Iterations,Instruction Count,CPI,Throughput,Description\\n");
+    const char* categories[] = {{
+        {categories_array}
+    }};
     
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        const port_test_t* test = &all_tests[i];
-        
-        float cycles = test->function();
-        float cpi = cycles / (float)(test->instruction_count * test->iterations);
-        float throughput = 1.0 / cpi;
-        
-        fprintf(csv_file, "%s,%s,%.2f,%" PRIu32 ",%" PRIu32 ",%.3f,%.3f,%s\\n",
-                test->name, test->category, cycles, test->iterations,
-                test->instruction_count, cpi, throughput, test->description);
-        
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }}
-    
-    fclose(csv_file);
-    printf("\\nCSV results saved to /sd/port_usage_results.csv\\n");
-}}
-
-void print_port_analysis(void) {{
-    printf("\\n================================================\\n");
-    printf("PORT USAGE ANALYSIS\\n");
-    printf("================================================\\n\\n");
-    
-    // Group by category
-    const char* categories[] = {{"ALU", "MEM_ALU", "MUL_DIV", "CONTROL", "MIXED"}};
-    const char* cat_names[] = {{"ALU Pairs", "Memory+ALU Pairs", 
-                               "Mul/Div Pairs", "Control Pairs", "Mixed Pairs"}};
-    
-    for (int cat_idx = 0; cat_idx < 5; cat_idx++) {{
-        printf("\\n=== %s ===\\n", cat_names[cat_idx]);
-        
-        float total_throughput = 0;
-        int count = 0;
-        
-        for (int i = 0; i < NUM_TESTS; i++) {{
-            if (strcmp(all_tests[i].category, categories[cat_idx]) == 0) {{
-                float cycles = all_tests[i].function();
-                float cpi = cycles / (float)(all_tests[i].instruction_count * all_tests[i].iterations);
-                float throughput = 1.0 / cpi;
-                
-                printf("  %-15s: Throughput = %.3f IPC", all_tests[i].name, throughput);
-                
-                // Port conflict detection
-                if (throughput > 1.8) {{
-                    printf(" (likely different ports)\\n");
-                }} else if (throughput > 1.3) {{
-                    printf(" (partial port sharing)\\n");
-                }} else {{
-                    printf(" (port conflict)\\n");
-                }}
-                
-                total_throughput += throughput;
-                count++;
-            }}
-        }}
-        
-        if (count > 0) {{
-            printf("  Average throughput: %.3f IPC\\n", total_throughput / count);
-        }}
+    for (int c = 0; c < {len(categories_list)}; c++) {{
+        run_throughput_category(categories[c]);
     }}
 }}
 """
-
-def generate_complete_port_usage_test_suite(output_dir="."):
     
-    generator = PortUsageGenerator()
-    
-    # Collect all tests
-    all_tests = []
-    
-    # ALU Pairs
-    alu_tests = generator.generate_alu_instruction_pairs()
-    for test in alu_tests:
-        test["category"] = "ALU"
-        test["instruction_count"] = 2  # Two instructions per pair
-        all_tests.append(test)
-    
-    # Memory+ALU Pairs
-    mem_tests = generator.generate_memory_alu_pairs()
-    for test in mem_tests:
-        test["category"] = "MEM_ALU"
-        test["instruction_count"] = 2
-        all_tests.append(test)
-    
-    # Mul/Div Pairs
-    mul_tests = generator.generate_mul_div_pairs()
-    for test in mul_tests:
-        test["category"] = "MUL_DIV"
-        test["instruction_count"] = 2
-        all_tests.append(test)
-    
-    # Control Pairs
-    ctrl_tests = generator.generate_control_pairs()
-    for test in ctrl_tests:
-        test["category"] = "CONTROL"
-        test["instruction_count"] = 2
-        all_tests.append(test)
-    
-    # Mixed Pairs
-    mixed_tests = generator.generate_mixed_pairs()
-    for test in mixed_tests:
-        test["category"] = "MIXED"
-        test["instruction_count"] = 2
-        all_tests.append(test)
-    
-    # ============================================================================
-    # CREATE OUTPUT DIRECTORY - MODIFIED
-    # ============================================================================
-    
-    # Nur main-Verzeichnis erstellen (kein esp32c6_port_usage)
-    os.makedirs("main", exist_ok=True)
-    
-    # ============================================================================
-    # GENERATE HEADER FILE
-    # ============================================================================
-    
-    function_decls = []
-    for test in all_tests:
-        func_name = f"port_test_{test['name'].lower()}"
-        function_decls.append(f"float {func_name}(void);")
-    
-    header_content = HEADER_TEMPLATE.format(
-        function_declarations="\n".join(function_decls)
-    )
-    
-    with open("main/esp32c6_port_usage_tests.h", "w") as f:
-        f.write(header_content)
-    
-    # ============================================================================
-    # GENERATE TEST FUNCTIONS
-    # ============================================================================
-    
-    test_functions = []
-    test_definitions = []
-
-    for idx, test in enumerate(all_tests):
-        func_name = f"port_test_{test['name'].lower()}"
-        
-        instruction_lines = []
-        
-        # Create instruction block with register rotation
-        for instr_name, operands in test["instructions"]:
-            instruction_lines.append(f'            "{instr_name} {operands}\\n"')
-        
-        instruction_block = "\n".join(instruction_lines)
-        
-        test_func = TEST_FUNCTION_TEMPLATE.format(
-            test_name=func_name,
-            iterations=test.get("iterations", 1000),
-            instruction_block=instruction_block
-        )
-        test_functions.append(test_func)
-        
-        test_def = f'    {{"{test["name"]}", {func_name}, {test["iterations"]}, ' \
-                   f'{test["instruction_count"]}, "{test["description"]}", "{test["category"]}"}}'
-        if idx < len(all_tests) - 1:
-            test_def += ","
-        test_definitions.append(test_def)
-    
-    # ============================================================================
-    # GENERATE MAIN C FILE
-    # ============================================================================
-    
-    main_content = MAIN_TEMPLATE.format(
-        test_functions="\n".join(test_functions),
-        test_definitions="\n".join(test_definitions)
-    )
-    
-    with open("main/esp32c6_port_usage_tests.c", "w") as f:
+    with open(os.path.join(MAIN_DIR, "esp32c6_throughput.c"), "w") as f:
         f.write(main_content)
     
-    # ============================================================================
-    # GENERATE MAIN.C
-    # ============================================================================
-    
-    example_main = """#include <stdio.h>
+    # main.c - mit extern Deklaration
+    main_c = """#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp32c6_port_usage_tests.h"
+#include "esp32c6_throughput.h"
+
+// NUM_TESTS ist in esp32c6_throughput.c definiert
+extern const int NUM_TESTS;
 
 void app_main(void) {
-    printf("\\nESP32-C6 Port Usage Measurement Suite\\n");
-    printf("=======================================\\n\\n");
+    printf("\\n");
+    printf("╔════════════════════════════════════════════════════════════╗\\n");
+    printf("║     ESP32-C6 THROUGHPUT ANALYSIS (Intel Definition)       ║\\n");
+    printf("║     Cycles Per Instruction (CPI) Measurement              ║\\n");
+    printf("╚════════════════════════════════════════════════════════════╝\\n");
     
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(500));
     
-    // Run all tests with analysis
-    run_all_port_usage_tests();
+    // Performance Counters initialisieren
+    init_performance_counters();
     
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // Alle Throughput-Tests ausführen
+    run_all_throughput_tests();
     
-    // Print detailed analysis
-    print_port_analysis();
+    // Detaillierte Analyse nach Kategorie
+    print_throughput_analysis();
     
-    // Uncomment to save CSV (requires SD card)
-    // print_port_csv_results();
-    
-    printf("\\n=== All port usage tests completed ===\\n");
+    printf("\\n✓ All throughput tests completed successfully!\\n");
+    printf("  Total tests: %d\\n", NUM_TESTS);
     
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(30000));
     }
 }
 """
     
-    with open("main/main.c", "w") as f:
-        f.write(example_main)
+    with open(os.path.join(MAIN_DIR, "main.c"), "w") as f:
+        f.write(main_c)
     
-    # ============================================================================
-    # GENERATE CMakeLists.txt
-    # ============================================================================
+    # CMakeLists.txt
+    cmake_sources = "main.c\n    esp32c6_throughput.c\n"
+    for safe_name, test, c_file, h_file, subdir in test_files:
+        cmake_sources += f"    ../tests/{subdir}/{c_file}\n"
     
-    main_cmake = """idf_component_register(SRCS "main.c"
-                              "esp32c6_port_usage_tests.c"
+    cmake = f"""idf_component_register(SRCS {cmake_sources}
                        INCLUDE_DIRS "."
                        REQUIRES freertos)
 """
     
-    with open("main/CMakeLists.txt", "w") as f:
-        f.write(main_cmake)
+    with open(os.path.join(MAIN_DIR, "CMakeLists.txt"), "w") as f:
+        f.write(cmake)
     
-    # KEIN SDKCONFIG MEHR ERSTELLEN
-    # print(f"  Complete port usage test suite generated in {output_dir}/")
-    print(f"  Complete port usage test suite generated in current directory")
-    
-    print(f"\n Test Statistics:")
-    print(f"   - Total number of tests: {len(all_tests)}")
-    
-    categories = {}
-    for test in all_tests:
-        cat = test["category"]
-        categories[cat] = categories.get(cat, 0) + 1
-    
-    for cat, count in categories.items():
-        cat_name = {
-            "ALU": "ALU Pairs",
-            "MEM_ALU": "Memory+ALU Pairs",
-            "MUL_DIV": "Mul/Div Pairs",
-            "CONTROL": "Control Pairs",
-            "MIXED": "Mixed Pairs"
-        }.get(cat, cat)
-        print(f"   - {cat_name}: {count} Tests")
-    
-    total_instructions = sum(t["instruction_count"] * t["iterations"] for t in all_tests)
-    print(f"   - Total instruction pairs per test run: {total_instructions}")
-    
-    print(f"\n Generated files:")
-    print(f"   - main/esp32c6_port_usage_tests.h")
-    print(f"   - main/esp32c6_port_usage_tests.c")
-    print(f"   - main/main.c")
-    print(f"   - main/CMakeLists.txt")
-    
-    # SDKCONFIG ENTFERNEN AUS DER LISTE
-    print(f"\n Build instructions:")
-    print(f"   1. cd .  # (current directory)")
-    print(f"   2. idf.py set-target esp32c6")
-    print(f"   3. idf.py build")
-    print(f"   4. idf.py flash monitor")
-    
-    return all_tests
+    return test_files
 
 # ============================================================================
-# 4. MAIN EXECUTION
+# MAIN GENERATOR
 # ============================================================================
+
+def main():
+    """Hauptfunktion: Generiert Throughput-Test-Suite."""
+    
+    print("\n" + "=" * 80)
+    print("                        ESP32-C6 THROUGHPUT TEST GENERATOR".center(80))
+    print("                Intel Definition: Cycles Per Instruction (CPI)".center(80))
+    print("=" * 80)
+    
+    all_insn = RISCVInstructions.get_all_instructions()
+    all_tests = []
+    
+    # 1. Basis Throughput Tests
+    print("\n[1/4] Generating base throughput tests...")
+    for insn_name in all_insn:
+        tests = IntelThroughputGenerator.generate_throughput_test(
+            insn_name, all_insn[insn_name]
+        )
+        all_tests.extend(tests)
+    base_count = len([t for t in all_tests if t['group'] == 'throughput_base'])
+    print(f"      → {base_count} base throughput tests")
+    
+    # 2. Port Conflict Tests
+    print("\n[2/4] Generating port conflict tests...")
+    for insn_name in ["add", "mul"]:
+        tests = IntelThroughputGenerator.generate_port_conflict_test(
+            insn_name, all_insn[insn_name]
+        )
+        all_tests.extend(tests)
+    port_count = len([t for t in all_tests if t['group'] == 'throughput_port'])
+    print(f"      → {port_count} port conflict tests")
+    
+    # 3. Dependency Comparison Tests
+    print("\n[3/4] Generating dependency comparison tests...")
+    dep_tests = ThroughputComparisonGenerator.generate_comparison_tests()
+    all_tests.extend(dep_tests)
+    dep_count = len([t for t in all_tests if t['group'] == 'throughput_dependency'])
+    print(f"      → {dep_count} dependency tests")
+    
+    # 4. Back-to-Back Tests
+    print("\n[4/4] Generating back-to-back tests...")
+    b2b_tests = BackToBackGenerator.generate_back_to_back_tests()
+    all_tests.extend(b2b_tests)
+    b2b_count = len([t for t in all_tests if t['group'] == 'throughput_back2back'])
+    print(f"      → {b2b_count} back-to-back tests")
+    
+    # Statistiken nach Kategorie (aus Skript 1)
+    print("\n" + "=" * 80)
+    print("                            THROUGHPUT TEST CATEGORIES".center(80))
+    print("=" * 80)
+    
+    categories = defaultdict(int)
+    for test in all_tests:
+        categories[test["category"]] += 1
+    
+    for cat in sorted(categories.keys()):
+        print(f"  {cat}: {categories[cat]} tests")
+    
+    print(f"\n  TOTAL: {len(all_tests)} throughput tests")
+    
+    # Dateien generieren (mit Struktur aus Skript 2)
+    print("\n" + "=" * 80)
+    print("                           GENERATING TEST FILES".center(80))
+    print("=" * 80)
+    
+    test_files = generate_test_files(all_tests)
+    
+    print("\n" + "=" * 80)
+    print("                           GENERATION COMPLETE!".center(80))
+    print("=" * 80)
+    print("\n📁 Generated files:")
+    print(f"  • {len(test_files)} test files in tests/throughput/")
+    print(f"  • main/esp32c6_throughput.h")
+    print(f"  • main/esp32c6_throughput.c")
+    print(f"  • main/main.c")
+    print(f"  • main/CMakeLists.txt")
+    
+    print("\n📋 NEXT STEPS:")
+    print("  1. cd to project root")
+    print("  2. idf.py build")
+    print("  3. idf.py -p PORT flash monitor")
+    print("\n   The tests measure CPI (Cycles Per Instruction)")
+    print("   according to Intel definition:")
+    print("   'Cycles until the same instruction can be issued again'")
 
 if __name__ == "__main__":
-    print("ESP32-C6 Port Usage Test Generator")
-    print("=" * 60)
-    
-    output_directory = "."  # Auf aktuelles Verzeichnis ändern
-    tests = generate_complete_port_usage_test_suite(output_directory)
-    
-    print("\n" + "=" * 60)
-    print(f" Done! Test suite created in current directory.")
-    
-    print("\n Overview of generated categories:")
-    categories = {}
-    for test in tests:
-        cat = test["category"]
-        categories[cat] = categories.get(cat, 0) + 1
-    
-    for cat, count in categories.items():
-        print(f"   - {cat}: {count} tests")
+    main()
