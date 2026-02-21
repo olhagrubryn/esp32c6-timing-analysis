@@ -151,50 +151,41 @@ class RISCVInstructions:
 # 2. NEUE KLASSE: Multi-Instruction Test Generator (UNVERÄNDERT)
 # ============================================================================
 
+# In scripts/generators/latency_generator.py - MultiInstructionTestGenerator
+
 class MultiInstructionTestGenerator:
-    """Generiert Tests mit 10, 20, 30 Instruktionen pro Durchlauf."""
+    """Multi-Instruction Tests (10-30 Instruktionen)."""
     
     @staticmethod
-    def generate_multi_instruction_tests():
-        """Generiert zusätzliche Tests mit mehreren Instruktionen."""
-        all_tests = []
-        all_insn = RISCVInstructions.get_all_instructions()
+    def generate_all():
+        tests = []
         categories = RISCVInstructions.get_instructions_by_category()
-        
-        instruction_counts = [10, 20, 30]
-        
-        print("\n      → Generating MULTI-INSTRUCTION tests (10,20,30 ops)...")
+        counts = [10, 20, 30]
         
         for category, insn_set in categories.items():
             for insn_name in sorted(insn_set)[:3]:
-                if insn_name in all_insn:
-                    template = all_insn[insn_name]
-                    
-                    if category in ["LOAD", "STORE"]:
-                        tests = MultiInstructionTestGenerator._generate_memory_tests(
-                            insn_name, template, category, instruction_counts
-                        )
-                        all_tests.extend(tests)
-                    
-                    elif category == "IMMEDIATE":
-                        tests = MultiInstructionTestGenerator._generate_immediate_tests(
-                            insn_name, template, instruction_counts
-                        )
-                        all_tests.extend(tests)
-                    
-                    elif category == "REG2REG":
-                        tests = MultiInstructionTestGenerator._generate_reg2reg_tests(
-                            insn_name, template, instruction_counts
-                        )
-                        all_tests.extend(tests)
-                    
-                    elif category == "DIV_MUL":
-                        tests = MultiInstructionTestGenerator._generate_divmul_tests(
-                            insn_name, template, instruction_counts
-                        )
-                        all_tests.extend(tests)
-        
-        return all_tests
+                if category == "LOAD":
+                    for dst in RISCVRegisters.DST_REGS[:1]:
+                        for count in counts:
+                            instrs = []
+                            for i in range(count):
+                                offset = (i * 4) % 32
+                                instr = f"{insn_name} {dst}, {offset}({RISCVRegisters.BASE_REG})"
+                                instrs.append((insn_name, instr))
+                            
+                            # FIX: Setze eindeutige Kategorisierung
+                            test = {
+                                "name": f"{insn_name}_multi{count}",
+                                "safe_name": f"{insn_name}_multi{count}",
+                                "instructions": instrs,
+                                "iterations": 200,
+                                "category": f"{category}_MULTI",  # Spezifischere Kategorie
+                                "instruction_count": count,
+                                "type": "latency",
+                                "test_group": "multi"  # Zusätzliches Feld für Gruppierung
+                            }
+                            tests.append(test)
+        return tests
     
     @staticmethod
     def _generate_memory_tests(insn_name, template, category, counts):

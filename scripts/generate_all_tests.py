@@ -48,7 +48,29 @@ class TestCollector:
         tests.extend(single)
         print(f"    → {len(single)} tests")
         
-        # ... andere Tests ...
+        print("  [Latency] Sequence tests...")
+        seq = LatencySequenceGenerator.generate_all()
+        for test in seq:
+            test["iterations"] = 20
+            test["type"] = "latency"
+        tests.extend(seq)
+        print(f"    → {len(seq)} tests")
+        
+        print("  [Latency] Multi instruction tests...")
+        multi = LatencyMultiGenerator.generate_all()
+        for test in multi:
+            test["iterations"] = 10
+            test["type"] = "latency"
+        tests.extend(multi)
+        print(f"    → {len(multi)} tests")
+        
+        print("  [Latency] Long sequence tests...")
+        long_tests = LatencyLongGenerator.generate_all()
+        for test in long_tests:
+            test["iterations"] = 5
+            test["type"] = "latency"
+        tests.extend(long_tests)
+        print(f"    → {len(long_tests)} tests")
         
         print("  [Latency] Comparison tests (für Wert-Vergleich)...")
         comp_tests = []
@@ -109,21 +131,12 @@ class LatencyFileGenerator:
     
     @staticmethod
     def generate_files(tests, test_entries, header_includes):
-        """Generiert Latenz-Test-Dateien - FIXED: test_value und value_type übernehmen!"""
+        """Generiert Latenz-Test-Dateien - FIXED: Korrekte Kategorisierung!"""
         test_files = []
         
         for test in tests:
-            # Bestimme Unterverzeichnis
-            if test["instruction_count"] == 1:
-                subdir = "single"
-            elif test["instruction_count"] >= 20:
-                subdir = "multi"
-            elif "CHAIN" in test["name"]:
-                subdir = "chains"
-            elif "RAND" in test["name"]:
-                subdir = "random"
-            else:
-                subdir = "sequences"
+            # Bestimme Unterverzeichnis basierend auf Test-Eigenschaften
+            subdir = LatencyFileGenerator._determine_subdir(test)
             
             subdir_path = os.path.join(TESTS_DIR, subdir)
             os.makedirs(subdir_path, exist_ok=True)
@@ -145,18 +158,10 @@ class LatencyFileGenerator:
             with open(os.path.join(subdir_path, c_filename), "w") as f:
                 f.write(c_content)
             
-            # Für Test-Tabelle - WICHTIG: test_value und value_type aus test übernehmen!
+            # Für Test-Tabelle
             description = test.get("description", f"{test['instruction_count']}x {test.get('category', 'unknown')}")
-            
-            # Standard-Werte für normale Latenz-Tests
             test_value = test.get("test_value", -1)
             value_type = test.get("value_type", "NONE")
-            
-            # Für Vergleichs-Tests die Werte aus dem Test übernehmen
-            if test.get("type") == "latency_compare" or "LATENCY_COMPARE" in test["name"]:
-                test_value = test.get("test_value", -1)
-                value_type = test.get("value_type", "NONE")
-                print(f"      ✓ Vergleichs-Test: {test['name']} mit Wert {test_value} ({value_type})")
             
             test_entries.append(
                 f'    {{"{test["name"]}", {func_name}, {test["iterations"]}, '
@@ -169,6 +174,47 @@ class LatencyFileGenerator:
             print(f"    ✓ tests/{subdir}/{c_filename}")
         
         return test_files
+    
+    @staticmethod
+    def _determine_subdir(test):
+        """
+        Bestimmt das richtige Unterverzeichnis für einen Test.
+        Berücksichtigt verschiedene Namenskonventionen und Test-Eigenschaften.
+        """
+        name = test["name"]
+        category = test.get("category", "")
+        insn_count = test["instruction_count"]
+        
+        # 1. Single instruction tests
+        if insn_count == 1:
+            return "single"
+        
+        # 2. Multi instruction tests (lange Sequenzen)
+        if insn_count >= 20 or "multi" in name.lower() or "LONG" in name:
+            return "multi"
+        
+        # 3. Chain tests
+        if "CHAIN" in name or "chain" in name.lower():
+            return "chains"
+        
+        # 4. Random tests
+        if "RAND" in name or "random" in name.lower():
+            return "random"
+        
+        # 5. Memory tests
+        if category == "LOAD" or category == "STORE" or "MEM" in name:
+            return "memory"
+        
+        # 6. Stress tests
+        if "STRESS" in name or "stress" in name.lower():
+            return "stress"
+        
+        # 7. Sequences (alles andere mit 2-19 Instruktionen)
+        if 2 <= insn_count <= 19:
+            return "sequences"
+        
+        # Fallback
+        return "sequences"
 
 # ============================================================================
 # DATEI-GENERATOR FÜR Durchsatz
@@ -541,7 +587,7 @@ extern const int THROUGHPUT_TEST_COUNT;
         for (int i = 0; i < NUM_TESTS; i++) {{
             if (strcmp(all_tests[i].type, "latency") == 0) {{
                 float cycles = all_tests[i].function();
-                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                float per_inst = cycles / all_tests[i].iterations / all_tests[i].instruction_count;
                 total += per_inst;
                 printf("%-30s %-12.2f %-12.2f %s\\n", 
                     all_tests[i].name, cycles, per_inst, all_tests[i].category);
@@ -587,7 +633,7 @@ extern const int THROUGHPUT_TEST_COUNT;
             if (strcmp(all_tests[i].type, "latency") == 0 && 
                 all_tests[i].instruction_count == 1) {{
                 float cycles = all_tests[i].function();
-                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                float per_inst = cycles / all_tests[i].iterations / all_tests[i].instruction_count;
                 printf("%-30s %-12.2f %s\\n", 
                     all_tests[i].name, per_inst, all_tests[i].category);
             }}
@@ -606,7 +652,7 @@ extern const int THROUGHPUT_TEST_COUNT;
                 all_tests[i].instruction_count > 1 && 
                 all_tests[i].instruction_count < 10) {{
                 float cycles = all_tests[i].function();
-                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                float per_inst = cycles / all_tests[i].iterations / all_tests[i].instruction_count;
                 printf("%-30s %-12.2f %-12.2f %s\\n", 
                     all_tests[i].name, cycles, per_inst, all_tests[i].category);
             }}
@@ -624,7 +670,7 @@ extern const int THROUGHPUT_TEST_COUNT;
             if (strcmp(all_tests[i].type, "latency") == 0 && 
                 all_tests[i].instruction_count >= 10) {{
                 float cycles = all_tests[i].function();
-                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                float per_inst = cycles / all_tests[i].iterations / all_tests[i].instruction_count;
                 printf("%-30s %-12.2f %-12.2f %s\\n", 
                     all_tests[i].name, cycles, per_inst, all_tests[i].category);
             }}
@@ -712,7 +758,7 @@ extern const int THROUGHPUT_TEST_COUNT;
                 strstr(all_tests[i].name, "LATENCY_COMPARE") != NULL) {{
                 
                 float cycles = all_tests[i].function();
-                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                float per_inst = cycles / all_tests[i].iterations / all_tests[i].instruction_count;
                 
                 latency_values[value_count] = per_inst;
                 values[value_count] = all_tests[i].test_value;
