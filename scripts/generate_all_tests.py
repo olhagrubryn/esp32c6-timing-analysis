@@ -6,6 +6,8 @@ import sys
 import random
 import argparse
 from collections import defaultdict
+from generators.comparison_generator import ComparisonTestGenerator
+
 
 # Pfad für Imports setzen
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,6 +44,7 @@ class TestCollector:
         single = LatencySingleGenerator.generate_all()
         for test in single:
             test["iterations"] = 30
+            test["type"] = "latency"  # Typ hinzufügen
         tests.extend(single)
         print(f"    → {len(single)} tests")
         
@@ -49,6 +52,7 @@ class TestCollector:
         seq = LatencySequenceGenerator.generate_all()
         for test in seq:
             test["iterations"] = 20
+            test["type"] = "latency"
         tests.extend(seq)
         print(f"    → {len(seq)} tests")
         
@@ -56,6 +60,7 @@ class TestCollector:
         multi = LatencyMultiGenerator.generate_all()
         for test in multi:
             test["iterations"] = 10
+            test["type"] = "latency"
         tests.extend(multi)
         print(f"    → {len(multi)} tests")
         
@@ -63,8 +68,20 @@ class TestCollector:
         long_tests = LatencyLongGenerator.generate_all()
         for test in long_tests:
             test["iterations"] = 5
+            test["type"] = "latency"
         tests.extend(long_tests)
         print(f"    → {len(long_tests)} tests")
+        
+        # NEU: Vergleichs-Latenz-Tests hinzufügen
+        print("  [Latency] Comparison tests (für Wert-Vergleich)...")
+        comp_tests = []
+        comp_tests.extend(ComparisonTestGenerator.generate_latency_for_divider_values())
+        comp_tests.extend(ComparisonTestGenerator.generate_latency_for_throughput_comparison())
+        for test in comp_tests:
+            test["iterations"] = 50
+            test["type"] = "latency"  # Als Latenz-Typ markieren
+        tests.extend(comp_tests)
+        print(f"    → {len(comp_tests)} comparison tests")
         
         return tests
     
@@ -76,6 +93,7 @@ class TestCollector:
         base = ThroughputBaseGenerator.generate_all()
         for test in base:
             test["iterations"] = 30
+            test["type"] = "throughput"
         tests.extend(base)
         print(f"    → {len(base)} tests")
         
@@ -83,6 +101,7 @@ class TestCollector:
         div = ThroughputDividerGenerator.generate_all()
         for test in div:
             test["iterations"] = 20
+            test["type"] = "throughput"
         tests.extend(div)
         print(f"    → {len(div)} tests")
         
@@ -90,6 +109,7 @@ class TestCollector:
         comp = ThroughputComparisonGenerator.generate_all()
         for test in comp:
             test["iterations"] = 10
+            test["type"] = "throughput"
         tests.extend(comp)
         print(f"    → {len(comp)} tests")
         
@@ -112,7 +132,7 @@ class LatencyFileGenerator:
     
     @staticmethod
     def generate_files(tests, test_entries, header_includes):
-        """Generiert Latenz-Test-Dateien."""
+        """Generiert Latenz-Test-Dateien - FIXED: test_value und value_type übernehmen!"""
         test_files = []
         
         for test in tests:
@@ -148,13 +168,23 @@ class LatencyFileGenerator:
             with open(os.path.join(subdir_path, c_filename), "w") as f:
                 f.write(c_content)
             
-            # Für Test-Tabelle - Fallback für description
+            # Für Test-Tabelle - WICHTIG: test_value und value_type aus test übernehmen!
             description = test.get("description", f"{test['instruction_count']}x {test.get('category', 'unknown')}")
+            
+            # Standard-Werte für normale Latenz-Tests
+            test_value = test.get("test_value", -1)
+            value_type = test.get("value_type", "NONE")
+            
+            # Für Vergleichs-Tests die Werte aus dem Test übernehmen
+            if test.get("type") == "latency_compare" or "LATENCY_COMPARE" in test["name"]:
+                test_value = test.get("test_value", -1)
+                value_type = test.get("value_type", "NONE")
+                print(f"      ✓ Vergleichs-Test: {test['name']} mit Wert {test_value} ({value_type})")
             
             test_entries.append(
                 f'    {{"{test["name"]}", {func_name}, {test["iterations"]}, '
                 f'{test["instruction_count"]}, "{description}", '
-                f'"{test["category"]}", "latency", -1, "NONE"}}'
+                f'"{test["category"]}", "latency", {test_value}, "{value_type}"}}'
             )
             
             header_includes.append(f'#include "../tests/{subdir}/{h_filename}"')
@@ -471,245 +501,295 @@ extern const int THROUGHPUT_TEST_COUNT;
     
     @staticmethod
     def generate_test_suite_c(test_entries_latency, test_entries_throughput):
-        """Generiert zentrale C-Datei mit Test-Runnern."""
+        """Generiert zentrale C-Datei mit Test-Runnern - FIXED Vergleich."""
         
         all_entries = test_entries_latency + test_entries_throughput
         entries_str = ",\n".join(all_entries)
         
         c_content = f"""#include <stdio.h>
-#include <string.h>
-#include "esp32c6_test_suite.h"
+    #include <string.h>
+    #include "esp32c6_test_suite.h"
 
-portMUX_TYPE test_mutex = portMUX_INITIALIZER_UNLOCKED;
+    portMUX_TYPE test_mutex = portMUX_INITIALIZER_UNLOCKED;
 
-// Test-Statistiken
-const int LATENCY_TEST_COUNT = {len(test_entries_latency)};
-const int THROUGHPUT_TEST_COUNT = {len(test_entries_throughput)};
-const int TOTAL_TEST_COUNT = {len(all_entries)};
+    // Test-Statistiken
+    const int LATENCY_TEST_COUNT = {len(test_entries_latency)};
+    const int THROUGHPUT_TEST_COUNT = {len(test_entries_throughput)};
+    const int TOTAL_TEST_COUNT = {len(all_entries)};
 
-// Test-Definitionen
-typedef struct {{
-    const char* name;
-    float (*function)(void);
-    int iterations;
-    int instruction_count;
-    const char* description;
-    const char* category;
-    const char* type;  // "latency" oder "throughput"
-    int test_value;
-    const char* value_type;
-}} test_entry_t;
+    // Test-Definitionen
+    typedef struct {{
+        const char* name;
+        float (*function)(void);
+        int iterations;
+        int instruction_count;
+        const char* description;
+        const char* category;
+        const char* type;  // "latency" oder "throughput"
+        int test_value;
+        const char* value_type;
+    }} test_entry_t;
 
-static const test_entry_t all_tests[] = {{
-{entries_str}
-}};
+    static const test_entry_t all_tests[] = {{
+    {entries_str}
+    }};
 
-#define NUM_TESTS (sizeof(all_tests) / sizeof(all_tests[0]))
+    #define NUM_TESTS (sizeof(all_tests) / sizeof(all_tests[0]))
 
-void init_performance_counters(void) {{
-    __asm__ __volatile__ (
-        "li a2, 1\\n"
-        "csrw 0x7E0, a2\\n"
-        "csrw 0x7E1, a2\\n"
-        ::: "a2"
-    );
-}}
+    void init_performance_counters(void) {{
+        __asm__ __volatile__ (
+            "li a2, 1\\n"
+            "csrw 0x7E0, a2\\n"
+            "csrw 0x7E1, a2\\n"
+            ::: "a2"
+        );
+    }}
 
-void run_all_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("ALLE TESTS (%d insgesamt)\\n", TOTAL_TEST_COUNT);
-    printf("========================================================\\n");
-    run_all_latency_tests();
-    run_all_throughput_tests();
-}}
+    void run_all_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("ALLE TESTS (%d insgesamt)\\n", TOTAL_TEST_COUNT);
+        printf("========================================================\\n");
+        run_all_latency_tests();
+        run_all_throughput_tests();
+    }}
 
-void run_all_latency_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("LATENZ-TESTS (%d Tests)\\n", LATENCY_TEST_COUNT);
-    printf("========================================================\\n");
-    printf("\\n%-30s %-12s %-12s %s\\n", "Test Name", "Total Cycles", "Per Op", "Category");
-    printf("%-30s %-12s %-12s %s\\n", "---------", "-----------", "------", "--------");
-    
-    float total = 0;
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "latency") == 0) {{
-            float cycles = all_tests[i].function();
-            float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
-            total += per_inst;
-            printf("%-30s %-12.2f %-12.2f %s\\n", 
-                   all_tests[i].name, cycles, per_inst, all_tests[i].category);
+    void run_all_latency_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("LATENZ-TESTS (%d Tests)\\n", LATENCY_TEST_COUNT);
+        printf("========================================================\\n");
+        printf("\\n%-30s %-12s %-12s %s\\n", "Test Name", "Total Cycles", "Per Op", "Category");
+        printf("%-30s %-12s %-12s %s\\n", "---------", "-----------", "------", "--------");
+        
+        float total = 0;
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "latency") == 0) {{
+                float cycles = all_tests[i].function();
+                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                total += per_inst;
+                printf("%-30s %-12.2f %-12.2f %s\\n", 
+                    all_tests[i].name, cycles, per_inst, all_tests[i].category);
+            }}
+        }}
+        printf("\\nAverage latency per instruction: %.2f cycles\\n", 
+            total / LATENCY_TEST_COUNT);
+    }}
+
+    void run_all_throughput_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("DURCHSATZ-TESTS (%d Tests)\\n", THROUGHPUT_TEST_COUNT);
+        printf("========================================================\\n");
+        printf("\\n%-35s %-10s %-10s %-15s %s\\n", 
+            "Test Name", "CPI", "IPC", "Category", "Value");
+        printf("%-35s %-10s %-10s %-15s %s\\n",
+            "---------", "---", "---", "--------", "-----");
+        
+        float total_cpi = 0;
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "throughput") == 0) {{
+                float cpi = all_tests[i].function();
+                float ipc = 1.0f / cpi;
+                total_cpi += cpi;
+                printf("%-35s %-10.3f %-10.3f %-15s %s %d\\n",
+                    all_tests[i].name, cpi, ipc, all_tests[i].category,
+                    all_tests[i].value_type, all_tests[i].test_value);
+            }}
+        }}
+        printf("\\nAverage CPI: %.3f, Average IPC: %.3f\\n", 
+            total_cpi / THROUGHPUT_TEST_COUNT, 
+            (float)THROUGHPUT_TEST_COUNT / total_cpi);
+    }}
+
+    void run_latency_single_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("LATENCY Single-Instruction Tests\\n");
+        printf("========================================================\\n");
+        printf("%-30s %-12s %s\\n", "Test Name", "Cycles/Op", "Category");
+        printf("%-30s %-12s %s\\n", "---------", "---------", "--------");
+        
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "latency") == 0 && 
+                all_tests[i].instruction_count == 1) {{
+                float cycles = all_tests[i].function();
+                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                printf("%-30s %-12.2f %s\\n", 
+                    all_tests[i].name, per_inst, all_tests[i].category);
+            }}
         }}
     }}
-    printf("\\nAverage latency per instruction: %.2f cycles\\n", 
-           total / LATENCY_TEST_COUNT);
-}}
 
-void run_all_throughput_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("DURCHSATZ-TESTS (%d Tests)\\n", THROUGHPUT_TEST_COUNT);
-    printf("========================================================\\n");
-    printf("\\n%-35s %-10s %-10s %-15s %s\\n", 
-           "Test Name", "CPI", "IPC", "Category", "Value");
-    printf("%-35s %-10s %-10s %-15s %s\\n",
-           "---------", "---", "---", "--------", "-----");
-    
-    float total_cpi = 0;
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "throughput") == 0) {{
-            float cpi = all_tests[i].function();
-            float ipc = 1.0f / cpi;
-            total_cpi += cpi;
-            printf("%-35s %-10.3f %-10.3f %-15s %s %d\\n",
-                   all_tests[i].name, cpi, ipc, all_tests[i].category,
-                   all_tests[i].value_type, all_tests[i].test_value);
+    void run_latency_sequence_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("LATENCY Sequence Tests (2-6 ops)\\n");
+        printf("========================================================\\n");
+        printf("%-30s %-12s %-12s %s\\n", "Test Name", "Total", "Per Op", "Category");
+        printf("%-30s %-12s %-12s %s\\n", "---------", "-----", "------", "--------");
+        
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "latency") == 0 && 
+                all_tests[i].instruction_count > 1 && 
+                all_tests[i].instruction_count < 10) {{
+                float cycles = all_tests[i].function();
+                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                printf("%-30s %-12.2f %-12.2f %s\\n", 
+                    all_tests[i].name, cycles, per_inst, all_tests[i].category);
+            }}
         }}
     }}
-    printf("\\nAverage CPI: %.3f, Average IPC: %.3f\\n", 
-           total_cpi / THROUGHPUT_TEST_COUNT, 
-           (float)THROUGHPUT_TEST_COUNT / total_cpi);
-}}
 
-void run_latency_single_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("LATENCY Single-Instruction Tests\\n");
-    printf("========================================================\\n");
-    printf("%-30s %-12s %s\\n", "Test Name", "Cycles/Op", "Category");
-    printf("%-30s %-12s %s\\n", "---------", "---------", "--------");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "latency") == 0 && 
-            all_tests[i].instruction_count == 1) {{
-            float cycles = all_tests[i].function();
-            float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
-            printf("%-30s %-12.2f %s\\n", 
-                   all_tests[i].name, per_inst, all_tests[i].category);
+    void run_latency_multi_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("LATENCY Multi-Instruction Tests (10-50 ops)\\n");
+        printf("========================================================\\n");
+        printf("%-30s %-12s %-12s %s\\n", "Test Name", "Total", "Per Op", "Category");
+        printf("%-30s %-12s %-12s %s\\n", "---------", "-----", "------", "--------");
+        
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "latency") == 0 && 
+                all_tests[i].instruction_count >= 10) {{
+                float cycles = all_tests[i].function();
+                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                printf("%-30s %-12.2f %-12.2f %s\\n", 
+                    all_tests[i].name, cycles, per_inst, all_tests[i].category);
+            }}
         }}
     }}
-}}
 
-void run_latency_sequence_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("LATENCY Sequence Tests (2-6 ops)\\n");
-    printf("========================================================\\n");
-    printf("%-30s %-12s %-12s %s\\n", "Test Name", "Total", "Per Op", "Category");
-    printf("%-30s %-12s %-12s %s\\n", "---------", "-----", "------", "--------");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "latency") == 0 && 
-            all_tests[i].instruction_count > 1 && 
-            all_tests[i].instruction_count < 10) {{
-            float cycles = all_tests[i].function();
-            float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
-            printf("%-30s %-12.2f %-12.2f %s\\n", 
-                   all_tests[i].name, cycles, per_inst, all_tests[i].category);
+    void run_throughput_base_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("THROUGHPUT Base Tests\\n");
+        printf("========================================================\\n");
+        printf("%-35s %-10s %-10s %s\\n", "Test Name", "CPI", "IPC", "Category");
+        printf("%-35s %-10s %-10s %s\\n", "---------", "---", "---", "--------");
+        
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "throughput") == 0 && 
+                strcmp(all_tests[i].category, "THROUGHPUT_SINGLE_ISSUE") == 0) {{
+                float cpi = all_tests[i].function();
+                float ipc = 1.0f / cpi;
+                printf("%-35s %-10.3f %-10.3f %s\\n", 
+                    all_tests[i].name, cpi, ipc, all_tests[i].category);
+            }}
         }}
     }}
-}}
 
-void run_latency_multi_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("LATENCY Multi-Instruction Tests (10-50 ops)\\n");
-    printf("========================================================\\n");
-    printf("%-30s %-12s %-12s %s\\n", "Test Name", "Total", "Per Op", "Category");
-    printf("%-30s %-12s %-12s %s\\n", "---------", "-----", "------", "--------");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "latency") == 0 && 
-            all_tests[i].instruction_count >= 10) {{
-            float cycles = all_tests[i].function();
-            float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
-            printf("%-30s %-12.2f %-12.2f %s\\n", 
-                   all_tests[i].name, cycles, per_inst, all_tests[i].category);
+    void run_throughput_divider_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("THROUGHPUT Divider Value Tests\\n");
+        printf("========================================================\\n");
+        printf("%-35s %-10s %-10s %-10s %s\\n", "Test Name", "CPI", "IPC", "Value", "Type");
+        printf("%-35s %-10s %-10s %-10s %s\\n", "---------", "---", "---", "-----", "----");
+        
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "throughput") == 0 && 
+                all_tests[i].test_value != -1) {{
+                float cpi = all_tests[i].function();
+                float ipc = 1.0f / cpi;
+                printf("%-35s %-10.3f %-10.3f %-10d %s\\n", 
+                    all_tests[i].name, cpi, ipc, 
+                    all_tests[i].test_value, all_tests[i].value_type);
+            }}
         }}
     }}
-}}
 
-void run_throughput_base_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("THROUGHPUT Base Tests\\n");
-    printf("========================================================\\n");
-    printf("%-35s %-10s %-10s %s\\n", "Test Name", "CPI", "IPC", "Category");
-    printf("%-35s %-10s %-10s %s\\n", "---------", "---", "---", "--------");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "throughput") == 0 && 
-            strcmp(all_tests[i].category, "THROUGHPUT_BASE") == 0) {{
-            float cpi = all_tests[i].function();
-            float ipc = 1.0f / cpi;
-            printf("%-35s %-10.3f %-10.3f %s\\n", 
-                   all_tests[i].name, cpi, ipc, all_tests[i].category);
+    void run_throughput_comparison_tests(void) {{
+        printf("\\n========================================================\\n");
+        printf("THROUGHPUT Comparison Tests (FREE vs DEP)\\n");
+        printf("========================================================\\n");
+        printf("%-35s %-10s %-10s %-15s\\n", "Test Name", "CPI", "IPC", "Type");
+        printf("%-35s %-10s %-10s %-15s\\n", "---------", "---", "---", "----");
+        
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "throughput") == 0 && 
+                (strstr(all_tests[i].category, "COMPARE") != NULL)) {{
+                float cpi = all_tests[i].function();
+                float ipc = 1.0f / cpi;
+                const char* comp_type = strstr(all_tests[i].name, "FREE") ? "FREE" : "DEP";
+                printf("%-35s %-10.3f %-10.3f %-15s\\n", 
+                    all_tests[i].name, cpi, ipc, comp_type);
+            }}
         }}
     }}
-}}
 
-void run_throughput_divider_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("THROUGHPUT Divider Value Tests\\n");
-    printf("========================================================\\n");
-    printf("%-35s %-10s %-10s %-10s %s\\n", "Test Name", "CPI", "IPC", "Value", "Type");
-    printf("%-35s %-10s %-10s %-10s %s\\n", "---------", "---", "---", "-----", "----");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "throughput") == 0 && 
-            all_tests[i].test_value != -1) {{
-            float cpi = all_tests[i].function();
-            float ipc = 1.0f / cpi;
-            printf("%-35s %-10.3f %-10.3f %-10d %s\\n", 
-                   all_tests[i].name, cpi, ipc, 
-                   all_tests[i].test_value, all_tests[i].value_type);
+    // ==================== FIXED: VERGLEICHSFUNKTION ====================
+    void compare_latency_throughput(void) {{
+        printf("\\n========================================================\\n");
+        printf("VERGLEICH: Latenz vs Durchsatz (gleiche Werte!)\\n");
+        printf("========================================================\\n\\n");
+        
+        printf("%-10s %-15s %-15s %-15s %s\\n", 
+            "Wert", "Latenz (cycles)", "Throughput (CPI)", "Ratio (L/T)", "Type");
+        printf("%-10s %-15s %-15s %-15s %s\\n",
+            "----", "---------------", "----------------", "-----------", "----");
+        
+        // Werte für den Vergleich sammeln
+        float latency_values[100];
+        float throughput_values[100];
+        const char* value_types[100];
+        int values[100];
+        int value_count = 0;
+        
+        // Latenz-Werte sammeln (nur DIV-bezogene)
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "latency") == 0 && 
+                all_tests[i].test_value != -1 &&
+                strstr(all_tests[i].name, "LATENCY_COMPARE") != NULL) {{
+                
+                float cycles = all_tests[i].function();
+                float per_inst = cycles / (all_tests[i].iterations * all_tests[i].instruction_count);
+                
+                latency_values[value_count] = per_inst;
+                values[value_count] = all_tests[i].test_value;
+                value_types[value_count] = all_tests[i].value_type;
+                value_count++;
+            }}
+        }}
+        
+        // Durchsatz-Werte sammeln
+        int throughput_count = 0;
+        for (int i = 0; i < NUM_TESTS; i++) {{
+            if (strcmp(all_tests[i].type, "throughput") == 0 && 
+                all_tests[i].test_value != -1) {{
+                
+                float cpi = all_tests[i].function();
+                
+                // Finde passenden Latenz-Wert
+                for (int j = 0; j < value_count; j++) {{
+                    if (all_tests[i].test_value == values[j]) {{
+                        throughput_values[j] = cpi;
+                        throughput_count++;
+                        break;
+                    }}
+                }}
+            }}
+        }}
+        
+        // Ergebnisse ausgeben
+        int printed = 0;
+        for (int j = 0; j < value_count; j++) {{
+            if (latency_values[j] > 0 && throughput_values[j] > 0) {{
+                float ratio = latency_values[j] / throughput_values[j];
+                printf("%-10d %-15.2f %-15.3f %-15.2f %s\\n", 
+                    values[j], latency_values[j], throughput_values[j], 
+                    ratio, value_types[j]);
+                printed++;
+            }}
+        }}
+        
+        if (printed == 0) {{
+            printf("\\n❌ Keine vergleichbaren Werte gefunden!\\n");
+            printf("   Latenz-Tests mit Werten: %d\\n", value_count);
+            printf("   Durchsatz-Tests mit Werten: %d\\n", throughput_count);
+            printf("\\n   HINWEIS: Stelle sicher, dass 'comparison_generator.py'\\n");
+            printf("   die Latenz-Tests mit denselben Werten generiert!\\n");
+        }} else {{
+            printf("\\n✅ Vergleich erfolgreich! %d Wertepaare gefunden.\\n", printed);
+            printf("   Ratio > 1: Latenz > Durchsatz, Ratio < 1: Latenz < Durchsatz\\n");
         }}
     }}
-}}
-
-void run_throughput_comparison_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("THROUGHPUT Comparison Tests (FREE vs DEP)\\n");
-    printf("========================================================\\n");
-    printf("%-35s %-10s %-10s %-15s\\n", "Test Name", "CPI", "IPC", "Type");
-    printf("%-35s %-10s %-10s %-15s\\n", "---------", "---", "---", "----");
-    
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "throughput") == 0 && 
-            (strstr(all_tests[i].category, "COMPARE") != NULL)) {{
-            float cpi = all_tests[i].function();
-            float ipc = 1.0f / cpi;
-            const char* comp_type = strstr(all_tests[i].name, "FREE") ? "FREE" : "DEP";
-            printf("%-35s %-10.3f %-10.3f %-15s\\n", 
-                   all_tests[i].name, cpi, ipc, comp_type);
-        }}
-    }}
-}}
-
-void compare_latency_throughput(void) {{
-    printf("\\n========================================================\\n");
-    printf("VERGLEICH: Latenz vs Durchsatz (gleiche Werte!)\\n");
-    printf("========================================================\\n\\n");
-    
-    printf("%-10s %-15s %-15s %-15s %s\\n", 
-           "Wert", "Latenz (cycles)", "Throughput (CPI)", "Ratio (L/T)", "Type");
-    printf("%-10s %-15s %-15s %-15s %s\\n",
-           "----", "---------------", "----------------", "-----------", "----");
-    
-    // Sammle alle Werte aus Durchsatz-Tests
-    for (int i = 0; i < NUM_TESTS; i++) {{
-        if (strcmp(all_tests[i].type, "throughput") == 0 && 
-            all_tests[i].test_value != -1) {{
-            int value = all_tests[i].test_value;
-            const char* value_type = all_tests[i].value_type;
-            float throughput_cpi = all_tests[i].function();
-            
-            printf("%-10d %-15s %-15.3f %-15s %s\\n", 
-                   value, "N/A", throughput_cpi, "N/A", value_type);
-        }}
-    }}
-    
-    printf("\\nHinweis: Fuer vollstaendigen Vergleich muessen Latenz-Tests\\n");
-    printf("   mit denselben Werten implementiert werden!\\n");
-}}
-"""
+    """
         with open(os.path.join(MAIN_DIR, "esp32c6_test_suite.c"), "w") as f:
             f.write(c_content)
-        print("    ✓ esp32c6_test_suite.c")
+        print("    ✓ esp32c6_test_suite.c (mit fixem Vergleich)")
 
 # ============================================================================
 # HAUPTFUNKTION
