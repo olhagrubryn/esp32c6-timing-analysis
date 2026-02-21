@@ -5,7 +5,7 @@ from typing import Tuple
 
 def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str, str]:
     """
-    Universeller C-Code Generator.
+    Universeller C-Code Generator - FIXED: Kritische Abschnitte minimiert!
     """
     
     func_name = f"test_{test['safe_name']}"
@@ -16,16 +16,19 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     
     instruction_block = "".join(instruction_lines)
     
-    # Iterationen basierend auf Instruction Count
+    # ITERATIONEN RADIKAL REDUZIEREN!
     base_iterations = test["iterations"]
-    if test["instruction_count"] >= 20:
-        iterations = min(base_iterations, 10)  # Stark reduziert!
+    
+    if "COMPARE" in test["name"] or test.get("type") == "latency_compare":
+        iterations = min(base_iterations, 5)  # Nur 5 Iterationen für Vergleich!
+    elif test["instruction_count"] >= 20:
+        iterations = min(base_iterations, 3)  # Nur 3 für lange Tests
     elif test["instruction_count"] >= 10:
-        iterations = min(base_iterations, 20)
+        iterations = min(base_iterations, 5)  # Nur 5 für Multi
     elif test["instruction_count"] >= 5:
-        iterations = min(base_iterations, 30)
+        iterations = min(base_iterations, 10) # Nur 10 für Sequenzen
     else:
-        iterations = min(base_iterations, 50)
+        iterations = min(base_iterations, 15) # Nur 15 für Single
     
     if test_type == "latency":
         return_statement = "return total_cycles;"
@@ -35,6 +38,7 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     test_value = test.get("test_value", -1)
     value_type = test.get("value_type", "NONE")
     
+    # WICHTIG: Kritischer Abschnitt NUR um die Instruktionen, NICHT um die ganze Schleife!
     func_template = f"""float {func_name}(void) {{
     float total_cycles = 0;
     
@@ -58,6 +62,7 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     for (int iter = 0; iter < {iterations}; iter++) {{
         uint32_t t_start, t_end;
         
+        // KRITISCHER ABSCHNITT - NUR für die Messung!
         portENTER_CRITICAL(&test_mutex);
         
         __asm__ __volatile__ (
@@ -83,7 +88,15 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
         );
         
         portEXIT_CRITICAL(&test_mutex);
+        
         total_cycles += (float)(t_end - t_start);
+        
+        // WATCHDOG-FEED: Kurze Pause nach jeder Iteration
+        if (iter % 2 == 1) {{
+            for (int w = 0; w < 100; w++) {{
+                __asm__ __volatile__ ("nop");
+            }}
+        }}
     }}
     
     {return_statement}

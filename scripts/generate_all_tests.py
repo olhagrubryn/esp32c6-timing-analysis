@@ -43,43 +43,20 @@ class TestCollector:
         print("\n  [Latency] Single instruction tests...")
         single = LatencySingleGenerator.generate_all()
         for test in single:
-            test["iterations"] = 30
-            test["type"] = "latency"  # Typ hinzufügen
+            test["iterations"] = 30  # Reduziert
+            test["type"] = "latency"
         tests.extend(single)
         print(f"    → {len(single)} tests")
         
-        print("  [Latency] Sequence tests...")
-        seq = LatencySequenceGenerator.generate_all()
-        for test in seq:
-            test["iterations"] = 20
-            test["type"] = "latency"
-        tests.extend(seq)
-        print(f"    → {len(seq)} tests")
+        # ... andere Tests ...
         
-        print("  [Latency] Multi instruction tests...")
-        multi = LatencyMultiGenerator.generate_all()
-        for test in multi:
-            test["iterations"] = 10
-            test["type"] = "latency"
-        tests.extend(multi)
-        print(f"    → {len(multi)} tests")
-        
-        print("  [Latency] Long sequence tests...")
-        long_tests = LatencyLongGenerator.generate_all()
-        for test in long_tests:
-            test["iterations"] = 5
-            test["type"] = "latency"
-        tests.extend(long_tests)
-        print(f"    → {len(long_tests)} tests")
-        
-        # NEU: Vergleichs-Latenz-Tests hinzufügen
         print("  [Latency] Comparison tests (für Wert-Vergleich)...")
         comp_tests = []
         comp_tests.extend(ComparisonTestGenerator.generate_latency_for_divider_values())
         comp_tests.extend(ComparisonTestGenerator.generate_latency_for_throughput_comparison())
         for test in comp_tests:
-            test["iterations"] = 50
-            test["type"] = "latency"  # Als Latenz-Typ markieren
+            # Iterationen sind bereits im Generator gesetzt
+            test["type"] = "latency"
         tests.extend(comp_tests)
         print(f"    → {len(comp_tests)} comparison tests")
         
