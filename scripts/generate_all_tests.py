@@ -234,153 +234,173 @@ class ThroughputFileGenerator:
 
 class MasterFileGenerator:
     """Generiert alle zentralen Dateien (main.c, CMakeLists.txt, etc.)."""
-    
+
     @staticmethod
     def generate_main_c():
-        """Generiert main.c - SUPER EINFACH: einmal Menü, einmal Eingabe, fertig."""
+        """Generiert main.c für ESP32-C6 - korrekte Erkennung von '10'."""
         main_c = """#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp32c6_test_suite.h"
+    #include <string.h>
+    #include <stdlib.h>
+    #include <ctype.h>
+    #include "freertos/FreeRTOS.h"
+    #include "freertos/task.h"
+    #include "esp32c6_test_suite.h"
 
-void print_menu(void) {
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║     ESP32-C6 BENCHMARKING SUITE                           ║\n");
-    printf("║     Bachelorarbeit - Umfassende Analyse                   ║\n");
-    printf("╠════════════════════════════════════════════════════════════╣\n");
-    printf("║  1. Alle Tests ausführen                                  ║\n");
-    printf("║  2. Nur Latenz-Tests                                      ║\n");
-    printf("║  3. Nur Durchsatz-Tests                                   ║\n");
-    printf("║  4. Latenz: Single-Instruction Tests                      ║\n");
-    printf("║  5. Latenz: Sequenz-Tests                                 ║\n");
-    printf("║  6. Latenz: Multi-Instruction Tests                       ║\n");
-    printf("║  7. Durchsatz: Basis-Tests                                ║\n");
-    printf("║  8. Durchsatz: Divider-Wert-Tests                         ║\n");
-    printf("║  9. Durchsatz: Vergleichstests (FREE vs DEP)              ║\n");
-    printf("║ 10. Vergleich Latenz vs Durchsatz (gleiche Werte)        ║\n");
-    printf("║                                                           ║\n");
-    printf("║  0. Beenden                                               ║\n");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("Auswahl (0-10): ");
-    fflush(stdout);
-}
+    void print_menu(void) {
+        printf("\\n");
+        printf("╔════════════════════════════════════════════════════════════╗\\n");
+        printf("║     ESP32-C6 BENCHMARKING SUITE                           ║\\n");
+        printf("║     Latenz + Durchsatz Analyse                            ║\\n");
+        printf("╠════════════════════════════════════════════════════════════╣\\n");
+        printf("║  1. Alle Tests ausführen                                  ║\\n");
+        printf("║  2. Nur Latenz-Tests                                      ║\\n");
+        printf("║  3. Nur Durchsatz-Tests                                   ║\\n");
+        printf("║  4. Latenz: Single-Instruction Tests                      ║\\n");
+        printf("║  5. Latenz: Sequenz-Tests                                 ║\\n");
+        printf("║  6. Latenz: Multi-Instruction Tests                       ║\\n");
+        printf("║  7. Durchsatz: Basis-Tests                                ║\\n");
+        printf("║  8. Durchsatz: Divider-Wert-Tests                         ║\\n");
+        printf("║  9. Durchsatz: Vergleichstests (FREE vs DEP)              ║\\n");
+        printf("║ 10. Vergleich Latenz vs Durchsatz (gleiche Werte)         ║\\n");
+        printf("║  0. Beenden                                               ║\\n");
+        printf("╚════════════════════════════════════════════════════════════╝\\n");
+        printf("Auswahl (0-10): ");
+        fflush(stdout);
+    }
 
-int get_input_with_timeout(void) {
-    char input[10];
-    TickType_t start_time = xTaskGetTickCount();
-    int choice = -1;
-
-    while (1) {
-        if (fgets(input, sizeof(input), stdin) != NULL) {
-            // Entferne Newline-Zeichen, falls vorhanden
-            size_t len = strlen(input);
-            if (len > 0 && input[len - 1] == '\n') {
-                input[len - 1] = '\0';
+    int get_input_esp32c6(void) {
+        char input[16] = {0};  // Größerer Puffer für "10" + Newline + Null
+        int index = 0;
+        int c;
+        
+        // Zeichen für Zeichen einlesen (funktioniert zuverlässig auf ESP32-C6)
+        while (1) {
+            c = getchar();
+            
+            if (c == '\\n' || c == '\\r') {  // Enter/Return gedrückt
+                if (index == 0) {
+                    // Leere Eingabe - Menü wieder anzeigen
+                    return -1;
+                }
+                input[index] = '\\0';  // String terminieren
+                break;
             }
-
-            // Überprüfe, ob die Eingabe leer ist
-            if (strlen(input) == 0) {
-                printf("\n❌ Es wurde keine Eingabe gemacht. Standardwahl: Alle Tests\n");
-                return 1;  // Standardwahl: Alle Tests
+            else if (c == '\\b' || c == 127) {  // Backspace
+                if (index > 0) {
+                    index--;
+                    printf("\\b \\b");  // Zeichen löschen
+                    fflush(stdout);
+                }
             }
-
-            // Konvertiere die Eingabe in eine Zahl
-            choice = atoi(input);
-
-            // Überprüfe auf gültige Auswahl
-            if (choice >= 0 && choice <= 10) {
-                return choice;
-            } else {
-                printf("\n❌ Ungültige Auswahl! Bitte eine Zahl zwischen 0 und 10 eingeben.\n");
+            else if (isdigit(c) && index < (sizeof(input) - 1)) {  // Nur Ziffern
+                input[index++] = (char)c;
+                printf("%c", c);  // Echo
+                fflush(stdout);
             }
+            vTaskDelay(pdMS_TO_TICKS(5));
         }
+        
+        printf("\\n");  // Neue Zeile nach der Eingabe
+        
+        // String in Zahl konvertieren
+        int choice = atoi(input);
+        
+        // Prüfen ob die Zahl im gültigen Bereich liegt
+        if (choice >= 0 && choice <= 10) {
+            return choice;
+        }
+        
+        return -1;  // Ungültige Eingabe
+    }
 
-        // Überprüfe, ob der Timeout erreicht ist (5 Sekunden)
-        if (xTaskGetTickCount() - start_time >= pdMS_TO_TICKS(5000)) {
-            printf("\n⏳ Timeout erreicht. Standardwahl: Alle Tests\n");
-            return 1;  // Standardwahl: Alle Tests
+    void app_main(void) {
+        // Kurz warten für UART Stabilität
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // Performance Counter initialisieren
+        init_performance_counters();
+        
+        int choice = -1;
+        
+        // Menü anzeigen
+        print_menu();
+        
+        // Einmalige Eingabe (keine Schleife - nur ein Versuch)
+        choice = get_input_esp32c6();
+        
+        // Prüfen ob Eingabe gültig war
+        if (choice < 0 || choice > 10) {
+            printf("\\n❌ Ungültige Eingabe! Starte Standard: Alle Tests (1)\\n");
+            choice = 1;  // Standard: Alle Tests
+        }
+        
+        printf("\\n");
+        
+        // Test ausführen
+        switch (choice) {
+            case 1: 
+                printf("▶ Alle Tests\\n");
+                run_all_tests(); 
+                break;
+            case 2: 
+                printf("▶ Nur Latenz-Tests\\n");
+                run_all_latency_tests(); 
+                break;
+            case 3: 
+                printf("▶ Nur Durchsatz-Tests\\n");
+                run_all_throughput_tests(); 
+                break;
+            case 4: 
+                printf("▶ Latenz: Single-Instruction\\n");
+                run_latency_single_tests(); 
+                break;
+            case 5: 
+                printf("▶ Latenz: Sequenz-Tests\\n");
+                run_latency_sequence_tests(); 
+                break;
+            case 6: 
+                printf("▶ Latenz: Multi-Instruction\\n");
+                run_latency_multi_tests(); 
+                break;
+            case 7: 
+                printf("▶ Durchsatz: Basis-Tests\\n");
+                run_throughput_base_tests(); 
+                break;
+            case 8: 
+                printf("▶ Durchsatz: Divider-Wert-Tests\\n");
+                run_throughput_divider_tests(); 
+                break;
+            case 9: 
+                printf("▶ Durchsatz: Vergleichstests\\n");
+                run_throughput_comparison_tests(); 
+                break;
+            case 10: 
+                printf("▶ Vergleich Latenz vs Durchsatz\\n");
+                compare_latency_throughput(); 
+                break;
+            case 0: 
+                printf("Programm beendet.\\n");
+                break;
+        }
+        
+        if (choice != 0) {
+            printf("\\n✅ Tests abgeschlossen!\\n");
+            printf("Drücke Reset fuer neuen Durchlauf.\\n");
+        }
+        
+        // Endlosschleife mit kurzen Pausen (Watchdog-freundlich)
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
-}
-
-void app_main(void) {
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║     ESP32-C6 BENCHMARKING SUITE                           ║\n");
-    printf("║     Latenz + Durchsatz Analyse                            ║\n");
-    printf("║     Gleiche Testwerte für Divider!                        ║\n");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-
-    // Initialisierungen
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    init_performance_counters();
-
-    // Menü anzeigen
-    print_menu();
-    
-    // Eingabe mit Timeout abfragen
-    int choice = get_input_with_timeout();
-
-    printf("\n");
-
-    // Test je nach Auswahl ausführen
-    switch (choice) {
-        case 1: 
-            run_all_tests(); 
-            break;
-        case 2: 
-            run_all_latency_tests(); 
-            break;
-        case 3: 
-            run_all_throughput_tests(); 
-            break;
-        case 4: 
-            run_latency_single_tests(); 
-            break;
-        case 5: 
-            run_latency_sequence_tests(); 
-            break;
-        case 6: 
-            run_latency_multi_tests(); 
-            break;
-        case 7: 
-            run_throughput_base_tests(); 
-            break;
-        case 8: 
-            run_throughput_divider_tests(); 
-            break;
-        case 9: 
-            run_throughput_comparison_tests(); 
-            break;
-        case 10: 
-            compare_latency_throughput(); 
-            break;
-        case 0: 
-            printf("Programm beendet.\n");
-            return;  // Programm beenden
-        default: 
-            printf("Ungültige Auswahl!\n");
-            break;
-    }
-
-    printf("\n✅ Fertig! Drücke Reset für neuen Durchlauf.\n");
-
-    // Warten und dann Reset anstoßen (kann durch System Reset ersetzt werden)
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(60000));  // 1 Minute warten, dann Reset
-    }
-}
     """
         with open(os.path.join(MAIN_DIR, "main.c"), "w") as f:
             f.write(main_c)
-        print("    ✓ main.c (super einfache Version)")
-        
+        print("    ✓ main.c für ESP32-C6 (erkennt '10' korrekt, nur eine Eingabe)")
+
     @staticmethod
     def generate_cmakelists(test_files_latency, test_files_throughput):
-        """Generiert CMakeLists.txt mit allen Test-Dateien."""
+        """Generiert CMakeLists.txt mit allen Test-Dateien und benötigten Komponenten."""
         
         cmake_sources = "main.c\n    esp32c6_test_suite.c\n"
         
@@ -393,12 +413,12 @@ void app_main(void) {
             cmake_sources += f"    ../tests/{subdir}/{c_file}\n"
         
         cmake = f"""idf_component_register(SRCS {cmake_sources}
-                       INCLUDE_DIRS "."
-                       REQUIRES freertos)
-"""
+                        INCLUDE_DIRS "."
+                        REQUIRES freertos driver esp_driver_gptimer)
+    """
         with open(os.path.join(MAIN_DIR, "CMakeLists.txt"), "w") as f:
             f.write(cmake)
-        print("    ✓ CMakeLists.txt")
+        print("    ✓ CMakeLists.txt (mit esp_driver_gptimer)")
     
     @staticmethod
     def generate_test_suite_h(header_includes):
