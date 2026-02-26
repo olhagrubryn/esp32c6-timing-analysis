@@ -1,28 +1,54 @@
 #!/usr/bin/env python3
-# scripts/base/instructions.py - Gemeinsame Instruktionen-Datenbank
+# scripts/base/instructions.py - Gemeinsame Instruktionen-Datenbank mit 8 Klassen
 
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Tuple
 
 class RISCVInstructions:
-    """Zentrale Datenbank aller RISC-V Instruktionen."""
+    """Zentrale Datenbank aller RISC-V Instruktionen - 8 Klassen nach Methodik."""
     
     @staticmethod
     def get_all_instructions() -> Dict[str, str]:
         """Alle verfügbaren Instruktionen."""
         return {
-            # ALU Register-zu-Register
+            # === Class 1: ALU Operations (Arithmetic Logic Unit) ===
             "add":  "add {dst}, {src1}, {src2}",
             "sub":  "sub {dst}, {src1}, {src2}",
             "xor":  "xor {dst}, {src1}, {src2}",
             "or":   "or {dst}, {src1}, {src2}",
             "and":  "and {dst}, {src1}, {src2}",
-            "sll":  "sll {dst}, {src1}, {src2}",
-            "srl":  "srl {dst}, {src1}, {src2}",
-            "sra":  "sra {dst}, {src1}, {src2}",
             "slt":  "slt {dst}, {src1}, {src2}",
             "sltu": "sltu {dst}, {src1}, {src2}",
             
-            # ALU Immediate
+            # === Class 2: Shift Operations (Barrel Shifter) ===
+            "sll":  "sll {dst}, {src1}, {src2}",
+            "srl":  "srl {dst}, {src1}, {src2}",
+            "sra":  "sra {dst}, {src1}, {src2}",
+            
+            # === Class 3: Multiplication (M-Extension) ===
+            "mul":   "mul {dst}, {src1}, {src2}",
+            "mulh":  "mulh {dst}, {src1}, {src2}",
+            "mulhu": "mulhu {dst}, {src1}, {src2}",
+            "mulhsu": "mulhsu {dst}, {src1}, {src2}",
+            
+            # === Class 4: Division (M-Extension) ===
+            "div":   "div {dst}, {src1}, {src2}",
+            "divu":  "divu {dst}, {src1}, {src2}",
+            "rem":   "rem {dst}, {src1}, {src2}",
+            "remu":  "remu {dst}, {src1}, {src2}",
+            
+            # === Class 5: Load Operations (Memory → Register) ===
+            "lb":   "lb {dst}, 0({base})",
+            "lh":   "lh {dst}, 0({base})",
+            "lw":   "lw {dst}, 0({base})",
+            "lbu":  "lbu {dst}, 0({base})",
+            "lhu":  "lhu {dst}, 0({base})",
+            
+            # === Class 6: Store Operations (Register → Memory) ===
+            "sb":   "sb {src}, 0({base})",
+            "sh":   "sh {src}, 0({base})",
+            "sw":   "sw {src}, 0({base})",
+            
+            # === Class 7: Immediate Operations (I-Type) ===
             "addi":  "addi {dst}, {src1}, {imm}",
             "xori":  "xori {dst}, {src1}, {imm}",
             "ori":   "ori {dst}, {src1}, {imm}",
@@ -32,41 +58,33 @@ class RISCVInstructions:
             "srai":  "srai {dst}, {src1}, {imm}",
             "slti":  "slti {dst}, {src1}, {imm}",
             "sltiu": "sltiu {dst}, {src1}, {imm}",
-            
-            # Load/Store
-            "lb":   "lb {dst}, 0({base})",
-            "lh":   "lh {dst}, 0({base})",
-            "lw":   "lw {dst}, 0({base})",
-            "lbu":  "lbu {dst}, 0({base})",
-            "lhu":  "lhu {dst}, 0({base})",
-            "sb":   "sb {src}, 0({base})",
-            "sh":   "sh {src}, 0({base})",
-            "sw":   "sw {src}, 0({base})",
-            
-            # Multiplikation/Division
-            "mul":   "mul {dst}, {src1}, {src2}",
-            "mulh":  "mulh {dst}, {src1}, {src2}",
-            "mulhu": "mulhu {dst}, {src1}, {src2}",
-            "div":   "div {dst}, {src1}, {src2}",
-            "divu":  "divu {dst}, {src1}, {src2}",
-            "rem":   "rem {dst}, {src1}, {src2}",
-            "remu":  "remu {dst}, {src1}, {src2}",
         }
     
     @staticmethod
-    def get_instructions_by_category() -> Dict[str, Set[str]]:
-        """Instruktionen nach Kategorien gruppiert."""
+    def get_instructions_by_class() -> Dict[str, Set[str]]:
+        """Instruktionen nach den 8 Klassen aus der Methodik gruppiert."""
         all_insn = RISCVInstructions.get_all_instructions()
         return {
-            "REG2REG": {name for name in all_insn if name in 
-                       ["add", "sub", "xor", "or", "and", "sll", "srl", "sra", "slt", "sltu"]},
-            "IMMEDIATE": {name for name in all_insn if name in 
-                         ["addi", "xori", "ori", "andi", "slli", "srli", "srai", "slti", "sltiu"]},
-            "LOAD": {name for name in all_insn if name in ["lb", "lh", "lw", "lbu", "lhu"]},
-            "STORE": {name for name in all_insn if name in ["sb", "sh", "sw"]},
-            "DIV_MUL": {name for name in all_insn if name in 
-                       ["mul", "mulh", "mulhu", "div", "divu", "rem", "remu"]}
+            "CLASS1_ALU": {"add", "sub", "xor", "or", "and", "slt", "sltu"},
+            "CLASS2_SHIFT": {"sll", "srl", "sra"},
+            "CLASS3_MUL": {"mul", "mulh", "mulhu", "mulhsu"},
+            "CLASS4_DIV": {"div", "divu", "rem", "remu"},
+            "CLASS5_LOAD": {"lb", "lh", "lw", "lbu", "lhu"},
+            "CLASS6_STORE": {"sb", "sh", "sw"},
+            "CLASS7_IMMEDIATE": {"addi", "xori", "ori", "andi", "slli", "srli", "srai", "slti", "sltiu"},
         }
+    
+    @staticmethod
+    def get_mixed_classes() -> List[Tuple[str, str, str]]:
+        """Mixed Classes für Cross-Class Dependency Chains (Tabelle 4.1)."""
+        return [
+            ("CLASS1_ALU", "CLASS7_IMMEDIATE", "ALU vs Immediate - Einfluss der Operandenanzahl"),
+            ("CLASS2_SHIFT", "CLASS1_ALU", "Shift → ALU - Dedizierter Shifter vs Shared ALU"),
+            ("CLASS3_MUL", "CLASS4_DIV", "Multiply vs Divide - Multi-Cycle Vergleich"),
+            ("CLASS5_LOAD", "CLASS1_ALU", "Load → ALU - Load-to-Use Latency"),
+            ("CLASS5_LOAD", "CLASS1_ALU", "CLASS6_STORE", "Load → ALU → Store - Memory Update & Forwarding"),
+            ("CLASS1_ALU", "CLASS8_BRANCH", "ALU + Branch - Compute/Control-Flow Interaktion"),
+        ]
     
     @staticmethod
     def get_valid_immediate_range(insn_name: str) -> List[int]:
