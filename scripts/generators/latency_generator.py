@@ -16,12 +16,15 @@ class LatencyRAWChainGenerator:
     """
     
     @staticmethod
+    # In generators/latency_generator.py, in der create_raw_chain Methode:
+
+    @staticmethod
     def create_raw_chain(insn_name: str, insn_template: str, 
-                         class_name: str, chain_length: int,
-                         register_set: str = "mixed") -> list:
+                        class_name: str, chain_length: int,
+                        register_set: str = "mixed") -> list:
         """
         Erzeugt eine RAW-Abhängigkeitskette.
-        Für Load/Store wird ein fester Basis-Pointer verwendet.
+        Für Load/Store wird NUR a3 als Basis-Pointer verwendet!
         """
         
         # Wähle Register-Set
@@ -47,8 +50,8 @@ class LatencyRAWChainGenerator:
             dst = regs[i % len(regs)]
             
             if class_name in ["CLASS5_LOAD", "CLASS6_STORE"]:
-                # FÜR LOAD/STORE: IMMER s0 als Basis-Pointer verwenden!
-                base_reg = RISCVRegisters.S0
+                # FÜR LOAD/STORE: NUR a3 als Basis-Pointer verwenden!
+                base_reg = RISCVRegisters.A3  # a3 ist der einzige Base-Pointer
                 
                 if class_name == "CLASS5_LOAD":
                     # Load: dst = memory[base_reg]
@@ -58,7 +61,7 @@ class LatencyRAWChainGenerator:
                     instr = insn_template.format(src=dst, base=base_reg)
                 
                 instructions.append((insn_name, instr))
-                last_dest = dst  # Für eventuelle spätere RAW-Abhängigkeiten
+                last_dest = dst
                 
             elif class_name == "CLASS7_IMMEDIATE":
                 # Immediate: Nur ein Register-Input
@@ -162,6 +165,11 @@ class SingleInstructionTestGenerator:
         print("\n      → Generating single instruction tests...")
         
         for class_name, insn_set in classes.items():
+            # Überspringe Load/Store Klassen komplett!
+            if class_name in ["CLASS5_LOAD", "CLASS6_STORE"]:
+                print(f"        Überspringe {class_name} (wird später aktiviert)")
+                continue
+                
             for insn_name in sorted(insn_set):
                 if insn_name not in all_insn:
                     continue
@@ -175,13 +183,7 @@ class SingleInstructionTestGenerator:
                     dst, src1, src2 = regs
                     
                     try:
-                        if class_name == "CLASS5_LOAD":
-                            base_reg = RISCVRegisters.S0
-                            instr = template.format(dst=dst, base=base_reg)
-                        elif class_name == "CLASS6_STORE":
-                            base_reg = RISCVRegisters.S0
-                            instr = template.format(src=dst, base=base_reg)
-                        elif class_name == "CLASS7_IMMEDIATE":
+                        if class_name == "CLASS7_IMMEDIATE":
                             valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)
                             instr = template.format(dst=dst, src1=src1, imm=valid_imms[0])
                         else:
@@ -266,21 +268,20 @@ class ZeroIdiomTestGenerator:
 
 
 class MixedClassTestGenerator:
-    """Cross-Class Dependency Chains mit korrekter Register-Wahl."""
+    """Cross-Class Dependency Chains - OHNE Load/Store für jetzt."""
     
     @staticmethod
     def generate_all():
         tests = []
         
-        print("\n      → Generating mixed class tests (Table 4.1)...")
+        print("\n      → Generating mixed class tests (nur ALU)...")
         
-        # 1. ALU vs Immediate
+        # 1. ALU vs Immediate (OK)
         alu_insns = ["add", "xor"]
         imm_insns = ["addi", "xori"]
         
         for alu in alu_insns:
             for imm in imm_insns:
-                # Verwende verschiedene Register-Typen
                 chain = [
                     (alu, f"{alu} {RISCVRegisters.T0}, {RISCVRegisters.T1}, {RISCVRegisters.T2}"),
                     (imm, f"{imm} {RISCVRegisters.T1}, {RISCVRegisters.T0}, 1"),
@@ -301,28 +302,30 @@ class MixedClassTestGenerator:
                     "value_type": "NONE"
                 })
         
-        # 2. Load → ALU (Load-to-Use) mit Saved-Register als Base
-        base = RISCVRegisters.S0
-        for load in ["lw"]:
+        # 2. Shift → ALU (OK)
+        for shift in ["sll"]:
             for alu in ["add"]:
                 chain = [
-                    (load, f"{load} {RISCVRegisters.T0}, 0({base})"),
-                    (alu, f"{alu} {RISCVRegisters.T1}, {RISCVRegisters.T0}, {RISCVRegisters.T2}"),
+                    (shift, f"{shift} {RISCVRegisters.T0}, {RISCVRegisters.T1}, {RISCVRegisters.T2}"),
+                    (alu, f"{alu} {RISCVRegisters.T1}, {RISCVRegisters.T0}, {RISCVRegisters.T3}"),
                 ]
                 
                 tests.append({
-                    "name": f"MIXED_LOAD_ALU_{load}_{alu}",
-                    "safe_name": f"MIXED_LOAD_ALU_{load}_{alu}",
+                    "name": f"MIXED_SHIFT_ALU_{shift}_{alu}",
+                    "safe_name": f"MIXED_SHIFT_ALU_{shift}_{alu}",
                     "instructions": chain,
-                    "iterations": 200,
-                    "category": "MIXED_CLASS4_LOAD_ALU",
+                    "iterations": 300,
+                    "category": "MIXED_CLASS2_SHIFT_ALU",
                     "instruction_count": 2,
-                    "description": "Load → ALU - Load-to-Use Latency",
+                    "description": "Shift → ALU - dedicated shifter vs shared ALU",
                     "test_group": "mixed",
                     "type": "latency",
                     "test_value": -1,
                     "value_type": "NONE"
                 })
+        
+        # Load/Store Tests werden später aktiviert
+        print("        Load/Store Tests werden später aktiviert")
         
         return tests
 

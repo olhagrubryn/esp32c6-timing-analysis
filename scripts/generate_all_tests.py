@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# scripts/generate_all_tests.py - Hauptgenerator für Latenz und Durchsatz
-# FIXED: Korrekte Pfade für Header-Includes
+# scripts/generate_all_tests.py - KORRIGIERTE VERSION
 
 import os
 import sys
@@ -44,32 +43,69 @@ class TestCollector:
         
         print("\n  [Latency] Single instruction tests...")
         single = LatencySingleGenerator.generate_all()
+        # Stelle sicher, dass jeder Test die richtigen Felder hat
+        for test in single:
+            test['type'] = 'latency'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(single)
         print(f"    → {len(single)} tests")
         
         print("  [Latency] RAW dependency chains...")
         raw = LatencyRAWChainGenerator.generate_class_tests()
+        for test in raw:
+            test['type'] = 'latency'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(raw)
         print(f"    → {len(raw)} tests")
         
         print("  [Latency] Zero idiom tests...")
         zero = ZeroIdiomTestGenerator.generate_all()
+        for test in zero:
+            test['type'] = 'latency'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(zero)
         print(f"    → {len(zero)} tests")
         
         print("  [Latency] Mixed class tests...")
         mixed = MixedClassTestGenerator.generate_all()
+        for test in mixed:
+            test['type'] = 'latency'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(mixed)
         print(f"    → {len(mixed)} tests")
         
         print("  [Latency] Multi instruction tests...")
         multi = MultiInstructionTestGenerator.generate_all()
+        for test in multi:
+            test['type'] = 'latency'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(multi)
         print(f"    → {len(multi)} tests")
         
         print("  [Latency] Comparison tests...")
         comp = ComparisonTestGenerator.generate_latency_for_divider_values()
         comp.extend(ComparisonTestGenerator.generate_latency_for_throughput_comparison())
+        for test in comp:
+            test['type'] = 'latency'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(comp)
         print(f"    → {len(comp)} tests")
         
@@ -81,16 +117,26 @@ class TestCollector:
         
         print("\n  [Throughput] Base tests...")
         base = ThroughputBaseGenerator.generate_all()
+        for test in base:
+            test['type'] = 'throughput'
+            if 'test_value' not in test:
+                test['test_value'] = -1
+            if 'value_type' not in test:
+                test['value_type'] = 'NONE'
         tests.extend(base)
         print(f"    → {len(base)} tests")
         
         print("  [Throughput] Divider value tests...")
         div = ThroughputDividerGenerator.generate_all()
+        for test in div:
+            test['type'] = 'throughput'
         tests.extend(div)
         print(f"    → {len(div)} tests")
         
         print("  [Throughput] Comparison tests...")
         comp = ThroughputComparisonGenerator.generate_all()
+        for test in comp:
+            test['type'] = 'throughput'
         tests.extend(comp)
         print(f"    → {len(comp)} tests")
         
@@ -229,7 +275,7 @@ class ThroughputFileGenerator:
         }
         
         for test in tests:
-            group = test["group"]
+            group = test.get("group", "throughput_base")
             subdir = group_to_dir.get(group, "throughput_base")
             subdir_path = os.path.join(TESTS_DIR, subdir)
             os.makedirs(subdir_path, exist_ok=True)
@@ -275,7 +321,7 @@ extern portMUX_TYPE test_mutex;
             test_entries.append(
                 f'    {{"{test["name"]}", {{.as_result = {func_name}}}, {test["iterations"]}, '
                 f'{test["instruction_count"]}, "{description}", '
-                f'"{test["category"]}", "throughput", {test["test_value"]}, "{test["value_type"]}"}}'
+                f'"{test["category"]}", "throughput", {test.get("test_value", -1)}, "{test.get("value_type", "NONE")}"}}'
             )
             
             # Für die zentrale Header-Datei: Relativer Pfad von main/ zu den Tests
@@ -335,94 +381,101 @@ static inline int calculate_optimal_iterations(float stddev, float mean, float d
         print("    ✓ test_result.h")
 
     @staticmethod
-  
     def generate_main_c():
-        """Generiert main.c für ESP32-C6 mit korrekter Watchdog-Initialisierung für ESP-IDF v5.5."""
+        """Generiert main.c für ESP32-C6."""
         main_c = """#include <stdio.h>
-    #include <string.h>
-    #include <stdlib.h>
-    #include <ctype.h>
-    #include "freertos/FreeRTOS.h"
-    #include "freertos/task.h"
-    #include "esp32c6_test_suite.h"
-    #include "esp_task_wdt.h"
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp32c6_test_suite.h"
+#include "esp_task_wdt.h"
 
-    void print_menu(void) {
-        printf("\\n");
-        printf("╔════════════════════════════════════════════════════════════╗\\n");
-        printf("║     ESP32-C6 BENCHMARKING SUITE                           ║\\n");
-        printf("║     Latenz + Durchsatz Analyse mit Statistik             ║\\n");
-        printf("╠════════════════════════════════════════════════════════════╣\\n");
-        printf("║  1. Alle Tests ausführen                                  ║\\n");
-        printf("║  2. Nur Latenz-Tests                                      ║\\n");
-        printf("║  3. Nur Durchsatz-Tests                                   ║\\n");
-        printf("║  4. Latenz: Single-Instruction Tests                      ║\\n");
-        printf("║  5. Latenz: Sequenz-Tests                                 ║\\n");
-        printf("║  6. Latenz: Multi-Instruction Tests                       ║\\n");
-        printf("║  7. Durchsatz: Basis-Tests                                ║\\n");
-        printf("║  8. Durchsatz: Divider-Wert-Tests                         ║\\n");
-        printf("║  9. Durchsatz: Vergleichstests (FREE vs DEP)              ║\\n");
-        printf("║ 10. Vergleich Latenz vs Durchsatz (gleiche Werte)         ║\\n");
-        printf("║  0. Beenden                                               ║\\n");
-        printf("╚════════════════════════════════════════════════════════════╝\\n");
-        printf("Auswahl (0-10): ");
-        fflush(stdout);
-    }
+void print_menu(void) {
+    printf("\\n");
+    printf("╔════════════════════════════════════════════════════════════╗\\n");
+    printf("║     ESP32-C6 BENCHMARKING SUITE                           ║\\n");
+    printf("║     Latenz + Durchsatz Analyse mit Statistik             ║\\n");
+    printf("╠════════════════════════════════════════════════════════════╣\\n");
+    printf("║  1. Alle Tests ausführen                                  ║\\n");
+    printf("║  2. Nur Latenz-Tests                                      ║\\n");
+    printf("║  3. Nur Durchsatz-Tests                                   ║\\n");
+    printf("║  4. Latenz: Single-Instruction Tests                      ║\\n");
+    printf("║  5. Latenz: Sequenz-Tests                                 ║\\n");
+    printf("║  6. Latenz: Multi-Instruction Tests                       ║\\n");
+    printf("║  7. Durchsatz: Basis-Tests                                ║\\n");
+    printf("║  8. Durchsatz: Divider-Wert-Tests                         ║\\n");
+    printf("║  9. Durchsatz: Vergleichstests (FREE vs DEP)              ║\\n");
+    printf("║ 10. Vergleich Latenz vs Durchsatz (gleiche Werte)         ║\\n");
+    printf("║  0. Beenden                                               ║\\n");
+    printf("╚════════════════════════════════════════════════════════════╝\\n");
+    printf("Auswahl (0-10): ");
+    fflush(stdout);
+}
 
-    int get_input_esp32c6(void) {
-        char input[16] = {0};
-        int index = 0;
-        int c;
-        
-        while (1) {
-            c = getchar();
-            if (c == '\\n' || c == '\\r') {
-                if (index == 0) return -1;
-                input[index] = '\\0';
-                break;
-            }
-            else if (c == '\\b' || c == 127) {
-                if (index > 0) {
-                    index--;
-                    printf("\\b \\b");
-                    fflush(stdout);
-                }
-            }
-            else if (isdigit(c) && index < (sizeof(input) - 1)) {
-                input[index++] = (char)c;
-                printf("%c", c);
+int get_input_esp32c6(void) {
+    char input[16] = {0};
+    int index = 0;
+    int c;
+    
+    while (1) {
+        c = getchar();
+        if (c == '\\n' || c == '\\r') {
+            if (index == 0) return -1;
+            input[index] = '\\0';
+            break;
+        }
+        else if (c == '\\b' || c == 127) {
+            if (index > 0) {
+                index--;
+                printf("\\b \\b");
                 fflush(stdout);
             }
-            vTaskDelay(pdMS_TO_TICKS(5));
         }
-        
-        printf("\\n");
-        int choice = atoi(input);
-        if (choice >= 0 && choice <= 10) return choice;
-        return -1;
+        else if (isdigit(c) && index < (sizeof(input) - 1)) {
+            input[index++] = (char)c;
+            printf("%c", c);
+            fflush(stdout);
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
+    
+    printf("\\n");
+    int choice = atoi(input);
+    if (choice >= 0 && choice <= 10) return choice;
+    return -1;
+}
 
-    void app_main(void) {
-        // Watchdog für ESP-IDF v5.5 konfigurieren
-        esp_task_wdt_config_t wdt_config = {
-            .timeout_ms = 30000,  // 30 Sekunden
-            .idle_core_mask = 0,  // Keine Idle-Cores
-            .trigger_panic = true, // Panic bei Timeout
-        };
-        esp_task_wdt_init(&wdt_config);
-        // Aktuelle Task zum Watchdog hinzufügen
-        esp_task_wdt_add(NULL);
-        
-        vTaskDelay(pdMS_TO_TICKS(500));
-        init_performance_counters();
-        
-        int choice = -1;
+void app_main(void) {
+    // Watchdog für ESP-IDF v5.5 konfigurieren
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = 30000,
+        .idle_core_mask = 0,
+        .trigger_panic = true,
+    };
+    esp_task_wdt_init(&wdt_config);
+    esp_task_wdt_add(NULL);
+    
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    printf("\\n");
+    printf("╔════════════════════════════════════════════════════════════╗\\n");
+    printf("║     ESP32-C6 BENCHMARKING SUITE                           ║\\n");
+    printf("║     Latenz + Durchsatz Analyse mit Statistik             ║\\n");
+    printf("╚════════════════════════════════════════════════════════════╝\\n");
+    printf("\\n");
+    printf("Initialisiere Performance-Counter...\\n");
+    init_performance_counters();
+    printf("OK\\n\\n");
+    
+    while (1) {
         print_menu();
-        choice = get_input_esp32c6();
+        int choice = get_input_esp32c6();
         
         if (choice < 0 || choice > 10) {
-            printf("\\n❌ Ungültige Eingabe! Starte Standard: Alle Tests (1)\\n");
-            choice = 1;
+            printf("\\n❌ Ungültige Eingabe!\\n");
+            continue;
         }
         
         printf("\\n");
@@ -475,18 +528,17 @@ static inline int calculate_optimal_iterations(float stddev, float mean, float d
         
         if (choice != 0) {
             printf("\\n✅ Tests abgeschlossen!\\n");
-            printf("Drücke Reset fuer neuen Durchlauf.\\n");
+            printf("Drücke Taste fuer neues Menue...\\n\\n");
         }
         
-        while (1) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            esp_task_wdt_reset();  // Watchdog regelmäßig füttern
-        }
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
-    """
+}
+"""
         with open(os.path.join(MAIN_DIR, "main.c"), "w") as f:
             f.write(main_c)
-        print("    ✓ main.c (ESP-IDF v5.5 kompatibel)")
+        print("    ✓ main.c")
 
     @staticmethod
     def generate_cmakelists(test_files_latency, test_files_throughput):
@@ -566,7 +618,7 @@ extern const int THROUGHPUT_TEST_COUNT;
     
     @staticmethod
     def generate_test_suite_c(test_entries_latency, test_entries_throughput):
-        """Generiert zentrale C-Datei mit Test-Runnern und statistischer Auswertung."""
+        """Generiert zentrale C-Datei mit Test-Runnern."""
         
         all_entries = test_entries_latency + test_entries_throughput
         entries_str = ",\n".join(all_entries)
@@ -613,12 +665,46 @@ void init_performance_counters(void) {{
     );
 }}
 
-void run_all_tests(void) {{
-    printf("\\n========================================================\\n");
-    printf("ALLE TESTS (%d insgesamt)\\n", TOTAL_TEST_COUNT);
-    printf("========================================================\\n");
-    run_all_latency_tests();
-    run_all_throughput_tests();
+// ===== Latenz-Test-Runner =====
+void run_latency_single_tests(void) {{
+    printf("\\n--- Single Instruction Latency Tests ---\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "latency") == 0 && 
+            strstr(all_tests[i].category, "SINGLE")) {{
+            esp_task_wdt_reset();
+            test_result_t res = all_tests[i].func.as_result();
+            printf("%s: %.2f cycles\\n", all_tests[i].name, res.mean);
+        }}
+    }}
+}}
+
+void run_latency_sequence_tests(void) {{
+    printf("\\n--- Sequence Latency Tests ---\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "latency") == 0 && 
+            (strstr(all_tests[i].category, "CHAIN") || 
+             strstr(all_tests[i].category, "SEQUENCE"))) {{
+            esp_task_wdt_reset();
+            test_result_t res = all_tests[i].func.as_result();
+            printf("%s: %.2f cycles (CPI: %.2f)\\n", 
+                   all_tests[i].name, res.mean, res.cpi);
+        }}
+    }}
+}}
+
+void run_latency_multi_tests(void) {{
+    printf("\\n--- Multi Instruction Latency Tests ---\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "latency") == 0 && 
+            (strstr(all_tests[i].category, "MULTI") || 
+             all_tests[i].instruction_count >= 10)) {{
+            esp_task_wdt_reset();
+            test_result_t res = all_tests[i].func.as_result();
+            printf("%s (%d ops): %.2f cycles (CPI: %.2f)\\n", 
+                   all_tests[i].name, all_tests[i].instruction_count, 
+                   res.mean, res.cpi);
+        }}
+    }}
 }}
 
 void run_all_latency_tests(void) {{
@@ -633,7 +719,6 @@ void run_all_latency_tests(void) {{
     float total = 0;
     for (int i = 0; i < NUM_TESTS; i++) {{
         if (strcmp(all_tests[i].type, "latency") == 0) {{
-            // Watchdog vor jedem Test füttern
             esp_task_wdt_reset();
             
             test_result_t res = all_tests[i].func.as_result();
@@ -655,6 +740,46 @@ void run_all_latency_tests(void) {{
     printf("\\nAverage latency per instruction: %.2f cycles\\n", total / LATENCY_TEST_COUNT);
 }}
 
+// ===== Durchsatz-Test-Runner =====
+void run_throughput_base_tests(void) {{
+    printf("\\n--- Base Throughput Tests ---\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "throughput") == 0 && 
+            strstr(all_tests[i].category, "BASE")) {{
+            esp_task_wdt_reset();
+            test_result_t res = all_tests[i].func.as_result();
+            printf("%s: CPI = %.3f, IPC = %.3f\\n", 
+                   all_tests[i].name, res.cpi, 1.0f/res.cpi);
+        }}
+    }}
+}}
+
+void run_throughput_divider_tests(void) {{
+    printf("\\n--- Divider Value Throughput Tests ---\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "throughput") == 0 && 
+            strstr(all_tests[i].category, "DIVIDER")) {{
+            esp_task_wdt_reset();
+            test_result_t res = all_tests[i].func.as_result();
+            printf("%s (Wert=%d, %s): CPI = %.3f\\n", 
+                   all_tests[i].name, all_tests[i].test_value, 
+                   all_tests[i].value_type, res.cpi);
+        }}
+    }}
+}}
+
+void run_throughput_comparison_tests(void) {{
+    printf("\\n--- Throughput Comparison Tests (FREE vs DEP) ---\\n");
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "throughput") == 0 && 
+            strstr(all_tests[i].category, "COMPARE")) {{
+            esp_task_wdt_reset();
+            test_result_t res = all_tests[i].func.as_result();
+            printf("%s: CPI = %.3f\\n", all_tests[i].name, res.cpi);
+        }}
+    }}
+}}
+
 void run_all_throughput_tests(void) {{
     printf("\\n========================================================\\n");
     printf("DURCHSATZ-TESTS mit statistischer Auswertung (%d Tests)\\n", THROUGHPUT_TEST_COUNT);
@@ -667,7 +792,6 @@ void run_all_throughput_tests(void) {{
     float total_cpi = 0;
     for (int i = 0; i < NUM_TESTS; i++) {{
         if (strcmp(all_tests[i].type, "throughput") == 0) {{
-            // Watchdog vor jedem Test füttern
             esp_task_wdt_reset();
             
             test_result_t res = all_tests[i].func.as_result();
@@ -691,7 +815,50 @@ void run_all_throughput_tests(void) {{
            (float)THROUGHPUT_TEST_COUNT / total_cpi);
 }}
 
-// ... restliche Funktionen bleiben gleich ...
+void run_all_tests(void) {{
+    printf("\\n========================================================\\n");
+    printf("ALLE TESTS (%d insgesamt)\\n", TOTAL_TEST_COUNT);
+    printf("========================================================\\n");
+    run_all_latency_tests();
+    run_all_throughput_tests();
+}}
+
+void compare_latency_throughput(void) {{
+    printf("\\n========================================================\\n");
+    printf("VERGLEICH Latenz vs Durchsatz (gleiche Werte)\\n");
+    printf("========================================================\\n");
+    printf("\\n%-20s %-12s %-12s %-12s\\n", 
+           "Wert", "Latenz (CPI)", "Durchsatz (CPI)", "Ratio (D/L)");
+    
+    for (int v = 0; v < NUM_TESTS; v++) {{
+        if (all_tests[v].test_value > 0) {{
+            int value = all_tests[v].test_value;
+            float latency_cpi = 0, throughput_cpi = 0;
+            int found_latency = 0, found_throughput = 0;
+            
+            for (int i = 0; i < NUM_TESTS; i++) {{
+                if (all_tests[i].test_value == value) {{
+                    if (strcmp(all_tests[i].type, "latency") == 0 && !found_latency) {{
+                        test_result_t res = all_tests[i].func.as_result();
+                        latency_cpi = res.cpi;
+                        found_latency = 1;
+                    }}
+                    if (strcmp(all_tests[i].type, "throughput") == 0 && !found_throughput) {{
+                        test_result_t res = all_tests[i].func.as_result();
+                        throughput_cpi = res.cpi;
+                        found_throughput = 1;
+                    }}
+                }}
+            }}
+            
+            if (found_latency && found_throughput) {{
+                float ratio = throughput_cpi / latency_cpi;
+                printf("%-20d %-12.3f %-12.3f %-12.3f\\n", 
+                       value, latency_cpi, throughput_cpi, ratio);
+            }}
+        }}
+    }}
+}}
 """
         with open(os.path.join(MAIN_DIR, "esp32c6_test_suite.c"), "w") as f:
             f.write(c_content)
