@@ -155,7 +155,6 @@ class LatencyRAWChainGenerator:
 
 class SingleInstructionTestGenerator:
     """Single-Instruction Tests mit verschiedenen Register-Kombinationen."""
-    
     @staticmethod
     def generate_all():
         tests = []
@@ -165,36 +164,36 @@ class SingleInstructionTestGenerator:
         print("\n      → Generating single instruction tests...")
         
         for class_name, insn_set in classes.items():
-            # Überspringe Load/Store Klassen komplett!
-            if class_name in ["CLASS5_LOAD", "CLASS6_STORE"]:
-                print(f"        Überspringe {class_name} (wird später aktiviert)")
-                continue
-                
             for insn_name in sorted(insn_set):
                 if insn_name not in all_insn:
                     continue
-                    
                 template = all_insn[insn_name]
-                
-                # Verschiedene Register-Kombinationen testen
                 reg_combs = RISCVRegisters.get_register_combinations()
                 
                 for comb_name, regs in reg_combs.items():
                     dst, src1, src2 = regs
-                    
                     try:
-                        if class_name == "CLASS7_IMMEDIATE":
+                        if class_name == "CLASS5_LOAD":
+                            instr = template.format(dst=dst, base=RISCVRegisters.S0)
+                            # Memory-Tests haben spezielle Kategorie
+                            category = "LOAD"
+                        elif class_name == "CLASS6_STORE":
+                            instr = template.format(src=dst, base=RISCVRegisters.S0)
+                            category = "STORE"
+                        elif class_name == "CLASS7_IMMEDIATE":
                             valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)
                             instr = template.format(dst=dst, src1=src1, imm=valid_imms[0])
+                            category = class_name
                         else:
                             instr = template.format(dst=dst, src1=src1, src2=src2)
+                            category = class_name
                         
                         test = {
                             "name": f"SINGLE_{class_name}_{insn_name}_{comb_name}",
                             "safe_name": f"SINGLE_{class_name}_{insn_name}_{comb_name}",
                             "instructions": [(insn_name, instr)],
-                            "iterations": 500,
-                            "category": class_name,
+                            "iterations": 300,
+                            "category": category,  # Hier wird die Kategorie gesetzt
                             "instruction_count": 1,
                             "description": f"Single {insn_name} with {comb_name}",
                             "test_group": "single",
@@ -203,11 +202,9 @@ class SingleInstructionTestGenerator:
                             "value_type": "NONE"
                         }
                         tests.append(test)
-                    except Exception as e:
+                    except:
                         continue
-        
         return tests
-
 
 class ZeroIdiomTestGenerator:
     """Testet Zero-Idioms (sub rd, rs, rs und xor rd, rs, rs)."""

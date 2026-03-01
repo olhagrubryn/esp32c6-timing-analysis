@@ -223,12 +223,17 @@ extern portMUX_TYPE test_mutex;
         return test_files
     
     @staticmethod
+    # In der Klasse LatencyFileGenerator, Methode _determine_subdir:
     def _determine_subdir(test):
         """Bestimmt das Unterverzeichnis basierend auf Test-Eigenschaften."""
         name = test["name"]
         test_group = test.get("test_group", "")
         insn_count = test["instruction_count"]
+        category = test.get("category", "")
         
+        # Memory-Tests explizit erkennen
+        if "LOAD" in category or "STORE" in category or "MEM" in name:
+            return "memory"
         if "RAW" in name or test_group == "raw_chains":
             return "raw_chains"
         if "MIXED" in name or test_group == "mixed":
@@ -243,10 +248,7 @@ extern portMUX_TYPE test_mutex;
             return "random"
         if "STRESS" in name:
             return "stress"
-        if "MEM" in name:
-            return "memory"
         return "sequences"
-
 # ============================================================================
 # DATEI-GENERATOR FÜR Durchsatz
 # ============================================================================

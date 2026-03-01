@@ -22,6 +22,8 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     base_iterations = test["iterations"]
     if "CLASS4_DIV" in test.get("category", ""):
         iterations = min(base_iterations, 100)
+    elif "LOAD" in test.get("category", "") or "STORE" in test.get("category", ""):
+        iterations = min(base_iterations, 30)  # Weniger Iterationen für Memory-Tests
     elif test["instruction_count"] >= 20:
         iterations = min(base_iterations, 150)
     elif test["instruction_count"] >= 10:
@@ -38,7 +40,7 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     
     # Für Load/Store-Tests - SPEZIALBEHANDLUNG!
     if is_load_store:
-        iterations = min(iterations, 50)  # Max 50 Iterationen für Load/Store
+        iterations = min(iterations, 30)  # Max 30 Iterationen für Load/Store
         if test_type == "throughput":
             return generate_throughput_loadstore_function(func_name, test, instruction_block,
                                                          iterations, test_value, value_type)
@@ -64,8 +66,17 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     
     # Bestimme welche Register tatsächlich in den Instruktionen verwendet werden
     used_regs = set()
+    base_registers = set()  # Speziell für Base-Pointer
+    
     for _, operands in test["instructions"]:
         parts = operands.replace(',', '').split()
+        # Die Base-Register sind die letzten in Load/Store Instruktionen
+        if '(' in operands and ')' in operands:
+            # Extrahiere Base-Register aus z.B. "lb t0, 0(s0)"
+            base_part = operands.split('(')[1].split(')')[0]
+            if base_part:
+                base_registers.add(base_part)
+        
         for part in parts:
             if part in ['t0','t1','t2','t3','t4','t5','t6',
                        'a0','a1','a2','a3','a4','a5','a6','a7',
@@ -73,7 +84,8 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
                 used_regs.add(part)
     
     # Stelle sicher, dass ALLE Base-Pointer initialisiert werden!
-    # Für lb t0, 0(s0) muss s0 initialisiert werden!
+    for base_reg in base_registers:
+        used_regs.add(base_reg)
     
     # Clobber-Liste
     clobber_list = [f'"{reg}"' for reg in sorted(used_regs)]
@@ -83,68 +95,70 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     buffer_decl = """    
     // Safe buffer in RAM - für Load/Store Tests
     static uint32_t safe_buffer[128] __attribute__((aligned(64))) = {
-        0x11111111, 0x22222222, 0x33333333, 0x44444444,
-        0x55555555, 0x66666666, 0x77777777, 0x88888888,
-        0x99999999, 0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC,
-        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x12345678,
-    };"""
+        [0]  = 0x11111111, [1]  = 0x22222222, [2]  = 0x33333333, [3]  = 0x44444444,
+        [4]  = 0x55555555, [5]  = 0x66666666, [6]  = 0x77777777, [7]  = 0x88888888,
+        [8]  = 0x99999999, [9]  = 0xAAAAAAAA, [10] = 0xBBBBBBBB, [11] = 0xCCCCCCCC,
+        [12] = 0xDDDDDDDD, [13] = 0xEEEEEEEE, [14] = 0xFFFFFFFF, [15] = 0x12345678,
+        [16] = 0x11111111, [17] = 0x22222222, [18] = 0x33333333, [19] = 0x44444444,
+        [20] = 0x55555555, [21] = 0x66666666, [22] = 0x77777777, [23] = 0x88888888,
+        [24] = 0x99999999, [25] = 0xAAAAAAAA, [26] = 0xBBBBBBBB, [27] = 0xCCCCCCCC,
+        [28] = 0xDDDDDDDD, [29] = 0xEEEEEEEE, [30] = 0xFFFFFFFF, [31] = 0x87654321,
+    };
+    
+    // Zeiger auf safe_buffer für Base-Register
+    uint32_t * const base_ptr = safe_buffer;"""
     
     # Basis-Pointer - ALLE Base-Register initialisieren!
     reg_init_code = [
-        '    uint32_t base_ptr = (uint32_t)safe_buffer;',
+        '    uint32_t base_ptr_val = (uint32_t)safe_buffer;',
+        '    uint32_t safe_buffer_addr = (uint32_t)safe_buffer;',
     ]
     
-    # ALLE möglichen Base-Register initialisieren
-    reg_init_code.append('    uint32_t s0_val = (uint32_t)safe_buffer;')
-    reg_init_code.append('    uint32_t s1_val = (uint32_t)safe_buffer + 16;')
-    reg_init_code.append('    uint32_t s2_val = (uint32_t)safe_buffer + 32;')
-    reg_init_code.append('    uint32_t a3_val = (uint32_t)safe_buffer;')
+    # Für jedes verwendete Base-Register einen Wert erzeugen
+    for base_reg in sorted(base_registers):
+        if base_reg in ['s0', 's1', 's2']:
+            offset = 0
+            if base_reg == 's1':
+                offset = 16
+            elif base_reg == 's2':
+                offset = 32
+            reg_init_code.append(f'    uint32_t {base_reg}_val = (uint32_t)safe_buffer + {offset};')
+        elif base_reg in ['a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7']:
+            reg_init_code.append(f'    uint32_t {base_reg}_val = (uint32_t)safe_buffer;')
+        else:
+            reg_init_code.append(f'    uint32_t {base_reg}_val = (uint32_t)safe_buffer;')
     
     # Work-Register
-    if 't0' in used_regs:
-        reg_init_code.append('    uint32_t t0_val = 0x11111111;')
-    if 't1' in used_regs:
-        reg_init_code.append('    uint32_t t1_val = 0x22222222;')
-    if 't2' in used_regs:
-        reg_init_code.append('    uint32_t t2_val = 0x33333333;')
+    work_regs = ['t0', 't1', 't2', 't3', 't4', 't5', 't6']
+    for reg in work_regs:
+        if reg in used_regs and reg not in base_registers:
+            reg_init_code.append(f'    uint32_t {reg}_val = 0x{reg[1]}1111111;')
     
     # Load-Register-Code - ALLE Base-Register laden!
-    load_regs_lines = [
-        '            // ALLE Basis-Register laden',
-        '            "mv a3, %[a3_val]\\n"',
-        '            "mv s0, %[s0_val]\\n"',
-        '            "mv s1, %[s1_val]\\n"',
-        '            "mv s2, %[s2_val]\\n"'
-    ]
+    load_regs_lines = ['            // Basis-Register laden']
     
-    if 't0' in used_regs:
-        load_regs_lines.append('            "mv t0, %[t0_val]\\n"')
-    if 't1' in used_regs:
-        load_regs_lines.append('            "mv t1, %[t1_val]\\n"')
-    if 't2' in used_regs:
-        load_regs_lines.append('            "mv t2, %[t2_val]\\n"')
+    for base_reg in sorted(base_registers):
+        load_regs_lines.append(f'            "mv {base_reg}, %[{base_reg}_val]\\n"')
+    
+    # Work-Register laden
+    for reg in sorted(used_regs):
+        if reg not in base_registers and reg in work_regs:
+            load_regs_lines.append(f'            "mv {reg}, %[{reg}_val]\\n"')
     
     load_regs_str = '\n'.join(load_regs_lines)
     
     # Input-Liste - ALLE Werte
-    input_list = [
-        '[a3_val] "r"(a3_val)',
-        '[s0_val] "r"(s0_val)',
-        '[s1_val] "r"(s1_val)',
-        '[s2_val] "r"(s2_val)'
-    ]
+    input_list = []
+    for base_reg in sorted(base_registers):
+        input_list.append(f'[{base_reg}_val] "r"({base_reg}_val)')
     
-    if 't0' in used_regs:
-        input_list.append('[t0_val] "r"(t0_val)')
-    if 't1' in used_regs:
-        input_list.append('[t1_val] "r"(t1_val)')
-    if 't2' in used_regs:
-        input_list.append('[t2_val] "r"(t2_val)')
+    for reg in sorted(used_regs):
+        if reg not in base_registers and reg in work_regs:
+            input_list.append(f'[{reg}_val] "r"({reg}_val)')
     
-    inputs_str = ',\n            '.join(input_list)
+    inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
-    # Instruction Block - OHNE zusätzliche Verarbeitung
     func_template = f"""#include <math.h>
 #include "esp_task_wdt.h"
 
@@ -169,7 +183,7 @@ test_result_t {func_name}(void) {{
     for (int iter = 0; iter < {iterations}; iter++) {{
         uint32_t t_start, t_end;
         
-        // Watchdog füttern
+        // Watchdog alle 2 Iterationen füttern
         if (iter % 2 == 0) {{
             esp_task_wdt_reset();
         }}
@@ -227,53 +241,88 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
     SPEZIELLE VERSION FÜR THROUGHPUT LOAD/STORE-TESTS.
     """
     
+    # Extrahiere Base-Register
+    base_registers = set()
+    for _, operands in test["instructions"]:
+        if '(' in operands and ')' in operands:
+            base_part = operands.split('(')[1].split(')')[0]
+            if base_part:
+                base_registers.add(base_part)
+    
     # Minimale Register für Throughput Load/Store
-    clobber_list = ['"t0"', '"t1"', '"t2"', '"a2"', '"a3"', '"a4"', '"a5"', '"s0"', '"memory"']
+    clobber_list = ['"t0"', '"t1"', '"t2"', '"a2"', '"a4"', '"a5"', '"memory"']
+    for base_reg in base_registers:
+        clobber_list.append(f'"{base_reg}"')
     clobber_str = ', '.join(clobber_list)
     
     # Buffer mit initialisierten Werten
     buffer_decl = """    
     // Safe buffer in RAM - für Load/Store Tests
     static uint32_t safe_buffer[128] __attribute__((aligned(64))) = {
-        0x11111111, 0x22222222, 0x33333333, 0x44444444,
-        0x55555555, 0x66666666, 0x77777777, 0x88888888,
-        0x99999999, 0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC,
-        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x12345678,
-        0x11111111, 0x22222222, 0x33333333, 0x44444444,
-        0x55555555, 0x66666666, 0x77777777, 0x88888888,
-        0x99999999, 0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC,
-        0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF, 0x87654321,
+        [0]  = 0x11111111, [1]  = 0x22222222, [2]  = 0x33333333, [3]  = 0x44444444,
+        [4]  = 0x55555555, [5]  = 0x66666666, [6]  = 0x77777777, [7]  = 0x88888888,
+        [8]  = 0x99999999, [9]  = 0xAAAAAAAA, [10] = 0xBBBBBBBB, [11] = 0xCCCCCCCC,
+        [12] = 0xDDDDDDDD, [13] = 0xEEEEEEEE, [14] = 0xFFFFFFFF, [15] = 0x12345678,
+        [16] = 0x11111111, [17] = 0x22222222, [18] = 0x33333333, [19] = 0x44444444,
+        [20] = 0x55555555, [21] = 0x66666666, [22] = 0x77777777, [23] = 0x88888888,
+        [24] = 0x99999999, [25] = 0xAAAAAAAA, [26] = 0xBBBBBBBB, [27] = 0xCCCCCCCC,
+        [28] = 0xDDDDDDDD, [29] = 0xEEEEEEEE, [30] = 0xFFFFFFFF, [31] = 0x87654321,
     };
     
     uint32_t *safe_buffer_ptr = safe_buffer;"""
     
     # Einfache Register-Initialisierung
-    reg_init = f"""
-    uint32_t t0_val = 0x11111111;
-    uint32_t t1_val = 0x22222222;
-    uint32_t t2_val = 0x33333333;
-    uint32_t a2_val = 0xAAAAAAAA;
-    uint32_t a4_val = 0xBBBBBBBB;
-    uint32_t a5_val = 0xCCCCCCCC;
-"""
+    reg_init_lines = [
+        '    uint32_t t0_val = 0x11111111;',
+        '    uint32_t t1_val = 0x22222222;',
+        '    uint32_t t2_val = 0x33333333;',
+        '    uint32_t a2_val = 0xAAAAAAAA;',
+        '    uint32_t a4_val = 0xBBBBBBBB;',
+        '    uint32_t a5_val = 0xCCCCCCCC;',
+        '    uint32_t safe_ptr = (uint32_t)safe_buffer;',
+    ]
     
-    # Load-Register-Code - Verwende safe_buffer_ptr aus C!
-    load_regs = """
-            "mv t0, %[t0_val]\\n"
-            "mv t1, %[t1_val]\\n"
-            "mv t2, %[t2_val]\\n"
-            "mv a2, %[a2_val]\\n"
-            "mv a3, %[safe_ptr]\\n"      // Base-Pointer aus C-Variable!
-            "mv a4, %[a4_val]\\n"
-            "mv a5, %[a5_val]\\n"
-            "mv s0, %[safe_ptr]\\n"       // Auch s0 als Base
-"""
+    for base_reg in base_registers:
+        offset = 0
+        if base_reg == 's1':
+            offset = 16
+        elif base_reg == 's2':
+            offset = 32
+        reg_init_lines.append(f'    uint32_t {base_reg}_val = (uint32_t)safe_buffer + {offset};')
     
-    # Input-Liste mit safe_buffer_ptr
-    inputs = """[t0_val] "r"(t0_val), [t1_val] "r"(t1_val), [t2_val] "r"(t2_val),
-            [a2_val] "r"(a2_val),
-            [a4_val] "r"(a4_val), [a5_val] "r"(a5_val),
-            [safe_ptr] "r"(safe_buffer_ptr)"""
+    reg_init = '\n'.join(reg_init_lines)
+    
+    # Load-Register-Code
+    load_regs_lines = []
+    for base_reg in base_registers:
+        load_regs_lines.append(f'            "mv {base_reg}, %[{base_reg}_val]\\n"')
+    
+    load_regs_lines.extend([
+        '            "mv t0, %[t0_val]\\n"',
+        '            "mv t1, %[t1_val]\\n"',
+        '            "mv t2, %[t2_val]\\n"',
+        '            "mv a2, %[a2_val]\\n"',
+        '            "mv a4, %[a4_val]\\n"',
+        '            "mv a5, %[a5_val]\\n"',
+    ])
+    
+    load_regs = '\n'.join(load_regs_lines)
+    
+    # Input-Liste
+    input_list = []
+    for base_reg in base_registers:
+        input_list.append(f'[{base_reg}_val] "r"({base_reg}_val)')
+    
+    input_list.extend([
+        '[t0_val] "r"(t0_val)',
+        '[t1_val] "r"(t1_val)',
+        '[t2_val] "r"(t2_val)',
+        '[a2_val] "r"(a2_val)',
+        '[a4_val] "r"(a4_val)',
+        '[a5_val] "r"(a5_val)',
+    ])
+    
+    inputs = ',\n            '.join(input_list)
     
     func_template = f"""#include <math.h>
 #include "esp_task_wdt.h"
@@ -298,7 +347,7 @@ test_result_t {func_name}(void) {{
     for (int iter = 0; iter < {iterations}; iter++) {{
         uint32_t t_start, t_end;
         
-        // Watchdog ALLE 5 Iterationen füttern
+        // Watchdog alle 5 Iterationen füttern
         if (iter % 5 == 0) {{
             esp_task_wdt_reset();
         }}
@@ -350,6 +399,7 @@ test_result_t {func_name}(void) {{
 """
     return func_name, func_template
 
+
 def generate_latency_test_function(func_name: str, test: dict, instruction_block: str,
                                   iterations: int, test_value, value_type) -> Tuple[str, str]:
     """Generiert Code für Latency-Tests (keine Load/Store)."""
@@ -374,16 +424,20 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
     clobber_str = ', '.join(clobber_list) + ', "memory"'
     
     # Register-Initialisierung
-    reg_init_code = ['    uint32_t base_ptr = 0x12345678;']
+    reg_init_code = []
     
     reg_values = {
         't0': '0x11111111', 't1': '0x22222222', 't2': '0x33333333',
         't3': '0x44444444', 't4': '0x55555555', 't5': '0x66666666',
         't6': '0x77777777',
         'a0': '0x88888888', 'a1': '0x99999999', 'a2': '0xAAAAAAAA',
+        'a3': '0x12345678',  # Dummy für a3
         'a4': '0xBBBBBBBB', 'a5': '0xCCCCCCCC', 'a6': '0xDDDDDDDD',
         'a7': '0xEEEEEEEE',
         's0': '0x11111111', 's1': '0x22222222', 's2': '0x33333333',
+        's3': '0x01010101', 's4': '0x02020202', 's5': '0x03030303',
+        's6': '0x04040404', 's7': '0x05050505', 's8': '0x06060606',
+        's9': '0x07070707', 's10': '0x08080808', 's11': '0x09090909',
     }
     
     for reg, val in reg_values.items():
@@ -473,7 +527,7 @@ test_result_t {func_name}(void) {{
     }}
     result.stddev = sqrtf(sum_sq / {iterations});
     
-    result.ci = 1.95 * result.stddev / sqrtf({iterations});
+    result.ci = 1.96 * result.stddev / sqrtf({iterations});
     result.rel_error = (result.ci / result.mean) * 100.0;
     result.cpi = result.mean / {test['instruction_count']};
     
@@ -591,6 +645,7 @@ test_result_t {func_name}(void) {{
 }}
 """
     return func_name, func_template
+
 
 def generate_header_content(test: dict, func_name: str) -> str:
     """Generiert den Inhalt einer Header-Datei für einen Test."""
