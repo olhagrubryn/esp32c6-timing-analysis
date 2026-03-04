@@ -5,7 +5,7 @@ from typing import Tuple
 
 def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str, str]:
     """
-    Generiert C-Code mit optimierter Register-Nutzung.
+    Generiert C-Code mit optimierter Register-Nutzung und Cache-Warmup.
     """
     
     func_name = f"test_{test['safe_name']}"
@@ -61,7 +61,7 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
 def generate_loadstore_test_function(func_name: str, test: dict, instruction_block: str,
                                     iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
-    SPEZIELLE VERSION FÜR LATENCY LOAD/STORE-TESTS.
+    SPEZIELLE VERSION FÜR LATENCY LOAD/STORE-TESTS mit Cache-Warmup.
     """
     
     # Bestimme welche Register tatsächlich in den Instruktionen verwendet werden
@@ -159,6 +159,27 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
+    # Cache-Warmup Block
+    warmup_code = f"""
+    // =======================================================
+    // CACHE WARMUP - Klassisches Warmup ohne Messung
+    // =======================================================
+    for (int warm = 0; warm < 10; warm++) {{
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
+{load_regs_str}
+            "fence\\n"
+{instruction_block}
+            "fence\\n"
+            : : {inputs_str} : {clobber_str}
+        );
+        portEXIT_CRITICAL(&test_mutex);
+    }}
+    
+    // Kurze Pause nach Warmup
+    vTaskDelay(pdMS_TO_TICKS(1));
+"""
+    
     func_template = f"""#include <math.h>
 #include "esp_task_wdt.h"
 
@@ -174,6 +195,11 @@ test_result_t {func_name}(void) {{
     // =======================================================
     
 {reg_init_str}
+    
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+{warmup_code}
     
     // Test-Wert: {test_value} ({value_type})
     uint32_t total_cycles = 0;
@@ -238,7 +264,7 @@ test_result_t {func_name}(void) {{
 def generate_throughput_loadstore_function(func_name: str, test: dict, instruction_block: str,
                                           iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
-    SPEZIELLE VERSION FÜR THROUGHPUT LOAD/STORE-TESTS.
+    SPEZIELLE VERSION FÜR THROUGHPUT LOAD/STORE-TESTS mit Cache-Warmup.
     """
     
     # Extrahiere Base-Register
@@ -324,6 +350,26 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
     
     inputs = ',\n            '.join(input_list)
     
+    # Cache-Warmup Block
+    warmup_code = f"""
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+    for (int warm = 0; warm < 10; warm++) {{
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
+            {load_regs}
+            "fence\\n"
+{instruction_block}
+            "fence\\n"
+            : : {inputs} : {clobber_str}
+        );
+        portEXIT_CRITICAL(&test_mutex);
+    }}
+    
+    vTaskDelay(pdMS_TO_TICKS(1));
+"""
+    
     func_template = f"""#include <math.h>
 #include "esp_task_wdt.h"
 
@@ -338,6 +384,11 @@ test_result_t {func_name}(void) {{
     // REGISTER-INITIALISIERUNG
     // =======================================================
     {reg_init}
+    
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+{warmup_code}
     
     // Test-Wert: {test_value} ({value_type})
     uint32_t total_cycles = 0;
@@ -402,7 +453,7 @@ test_result_t {func_name}(void) {{
 
 def generate_latency_test_function(func_name: str, test: dict, instruction_block: str,
                                   iterations: int, test_value, value_type) -> Tuple[str, str]:
-    """Generiert Code für Latency-Tests (keine Load/Store)."""
+    """Generiert Code für Latency-Tests (keine Load/Store) mit Cache-Warmup."""
     
     # Bestimme welche Register verwendet werden
     used_regs = set()
@@ -461,6 +512,26 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
     inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
+    # Cache-Warmup Block
+    warmup_code = f"""
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+    for (int warm = 0; warm < 10; warm++) {{
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
+{load_regs_str}
+            "fence\\n"
+{instruction_block}
+            "fence\\n"
+            : : {inputs_str} : {clobber_str}
+        );
+        portEXIT_CRITICAL(&test_mutex);
+    }}
+    
+    vTaskDelay(pdMS_TO_TICKS(1));
+"""
+    
     func_template = f"""#include <math.h>
 #include "esp_task_wdt.h"
 
@@ -475,6 +546,11 @@ test_result_t {func_name}(void) {{
     // =======================================================
     
 {reg_init_str}
+    
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+{warmup_code}
     
     // Test-Wert: {test_value} ({value_type})
     uint32_t total_cycles = 0;
@@ -540,7 +616,7 @@ test_result_t {func_name}(void) {{
 def generate_throughput_test_function(func_name: str, test: dict, instruction_block: str,
                                      iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
-    Spezielle Version für normale Throughput-Tests (keine Load/Store).
+    Spezielle Version für normale Throughput-Tests (keine Load/Store) mit Cache-Warmup.
     """
     
     # Minimale Register für Throughput
@@ -572,6 +648,26 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
             [a2_val] "r"(a2_val),
             [a4_val] "r"(a4_val), [a5_val] "r"(a5_val)"""
     
+    # Cache-Warmup Block
+    warmup_code = f"""
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+    for (int warm = 0; warm < 10; warm++) {{
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
+            {load_regs}
+            "fence\\n"
+{instruction_block}
+            "fence\\n"
+            : : {inputs} : {clobber_str}
+        );
+        portEXIT_CRITICAL(&test_mutex);
+    }}
+    
+    vTaskDelay(pdMS_TO_TICKS(1));
+"""
+    
     func_template = f"""#include <math.h>
 #include "esp_task_wdt.h"
 
@@ -585,6 +681,11 @@ test_result_t {func_name}(void) {{
     // REGISTER-INITIALISIERUNG
     // =======================================================
     {reg_init}
+    
+    // =======================================================
+    // CACHE WARMUP
+    // =======================================================
+{warmup_code}
     
     // Test-Wert: {test_value} ({value_type})
     uint32_t total_cycles = 0;
