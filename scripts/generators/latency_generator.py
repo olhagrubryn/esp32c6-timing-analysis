@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
-# scripts/generators/latency_generator.py - Mit vollständiger Register-Auswahl
+# scripts/generators/latency_generator.py
 
-import random
-import sys
-import os
-
+import random, sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from base.registers import RISCVRegisters
 from base.instructions import RISCVInstructions
 
 class LatencyRAWChainGenerator:
-    """
-    Implementiert RAW Dependency Chains mit verschiedenen Register-Typen.
-    """
+    """RAW Dependency Chains."""
     
-    @staticmethod
-    # In generators/latency_generator.py, in der create_raw_chain Methode:
-
     @staticmethod
     def create_raw_chain(insn_name: str, insn_template: str, 
                         class_name: str, chain_length: int,
@@ -50,8 +41,8 @@ class LatencyRAWChainGenerator:
             dst = regs[i % len(regs)]
             
             if class_name in ["CLASS5_LOAD", "CLASS6_STORE"]:
-                # FÜR LOAD/STORE: NUR a3 als Basis-Pointer verwenden!
-                base_reg = RISCVRegisters.A3  # a3 ist der einzige Base-Pointer
+                # FÜR LOAD/STORE: s0 als Basis-Pointer verwenden (nicht a3!)
+                base_reg = RISCVRegisters.S0  # WICHTIG: s0 statt a3!
                 
                 if class_name == "CLASS5_LOAD":
                     # Load: dst = memory[base_reg]
@@ -61,321 +52,165 @@ class LatencyRAWChainGenerator:
                     instr = insn_template.format(src=dst, base=base_reg)
                 
                 instructions.append((insn_name, instr))
-                last_dest = dst
-                
-            elif class_name == "CLASS7_IMMEDIATE":
-                # Immediate: Nur ein Register-Input
-                valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)
-                imm = valid_imms[i % len(valid_imms)]
-                
-                if i == 0:
-                    src1 = regs[(i + 1) % len(regs)]
-                else:
-                    src1 = last_dest
-                
-                instr = insn_template.format(dst=dst, src1=src1, imm=imm)
-                instructions.append((insn_name, instr))
-                last_dest = dst
-                
-            else:
-                # ALU, Shift, Mul, Div
-                if i == 0:
-                    src1 = regs[(i + 1) % len(regs)]
-                    src2 = regs[(i + 2) % len(regs)]
-                else:
-                    src1 = last_dest
-                    src2 = regs[(i + 2) % len(regs)]
-                
-                instr = insn_template.format(dst=dst, src1=src1, src2=src2)
-                instructions.append((insn_name, instr))
-                last_dest = dst
-        
-        return instructions
     
     @staticmethod
     def generate_class_tests():
-        """Generiert RAW-Chain-Tests."""
-        tests = []
-        all_insn = RISCVInstructions.get_all_instructions()
+        tests, all_insn = [], RISCVInstructions.get_all_instructions()
         classes = RISCVInstructions.get_instructions_by_class()
         
         print("\n      → Generating RAW dependency chains...")
-        
-        # Teste mit verschiedenen Register-Sets
-        register_sets = ["t_regs", "a_regs", "s_regs", "mixed"]
+        reg_sets = ["t_regs", "a_regs", "s_regs", "mixed"]
         
         for class_name, insn_set in classes.items():
-            # Verschiedene Kettenlängen
-            if class_name in ["CLASS5_LOAD", "CLASS6_STORE"]:
-                # Für Load/Store: Kürzere Ketten
-                chain_lengths = [2, 3, 4]
-                iterations_base = 200
-            else:
-                chain_lengths = [3, 5, 7, 10]
-                iterations_base = 300
+            lengths = [2,3,4] if class_name in ["CLASS5_LOAD","CLASS6_STORE"] else [3,5,7,10]
+            base_iter = 200 if class_name in ["CLASS5_LOAD","CLASS6_STORE"] else 300
             
             for insn_name in sorted(insn_set)[:2]:
-                if insn_name not in all_insn:
-                    continue
-                    
-                template = all_insn[insn_name]
+                if insn_name not in all_insn: continue
+                tmpl = all_insn[insn_name]
                 
-                for reg_set in register_sets:
-                    for length in chain_lengths:
-                        chain = LatencyRAWChainGenerator.create_raw_chain(
-                            insn_name, template, class_name, length, reg_set
-                        )
-                        
+                for reg_set in reg_sets:
+                    for length in lengths:
+                        chain = LatencyRAWChainGenerator.create_raw_chain(insn_name, tmpl, class_name, length, reg_set)
                         if chain:
-                            # Iterationen basierend auf Klasse
-                            if class_name == "CLASS4_DIV":
-                                iterations = min(iterations_base, 100)
-                            elif class_name in ["CLASS3_MUL", "CLASS5_LOAD", "CLASS6_STORE"]:
-                                iterations = min(iterations_base, 200)
-                            else:
-                                iterations = min(iterations_base, 300)
-                            
-                            test = {
+                            iter = min(base_iter, 100 if class_name=="CLASS4_DIV" else 200 if class_name in ["CLASS3_MUL","CLASS5_LOAD","CLASS6_STORE"] else 300)
+                            tests.append({
                                 "name": f"RAW_{class_name}_{insn_name}_{length}_{reg_set}",
                                 "safe_name": f"RAW_{class_name}_{insn_name}_{length}_{reg_set}",
-                                "instructions": chain,
-                                "iterations": iterations,
-                                "category": class_name,
-                                "instruction_count": length,
-                                "description": f"RAW chain of {length} {insn_name} using {reg_set}",
-                                "test_group": "raw_chains",
-                                "type": "latency",
-                                "test_value": -1,
-                                "value_type": "NONE"
-                            }
-                            tests.append(test)
-        
+                                "instructions": chain, "iterations": iter, "category": class_name,
+                                "instruction_count": length, "description": f"RAW chain of {length} {insn_name} using {reg_set}",
+                                "test_group": "raw_chains", "type": "latency", "test_value": -1, "value_type": "NONE"
+                            })
         return tests
 
 
 class SingleInstructionTestGenerator:
-    """Single-Instruction Tests mit verschiedenen Register-Kombinationen."""
+    """Single Instruction Tests."""
+    
     @staticmethod
     def generate_all():
-        tests = []
-        all_insn = RISCVInstructions.get_all_instructions()
+        tests, all_insn = [], RISCVInstructions.get_all_instructions()
         classes = RISCVInstructions.get_instructions_by_class()
         
         print("\n      → Generating single instruction tests...")
         
         for class_name, insn_set in classes.items():
             for insn_name in sorted(insn_set):
-                if insn_name not in all_insn:
-                    continue
-                template = all_insn[insn_name]
-                reg_combs = RISCVRegisters.get_register_combinations()
+                if insn_name not in all_insn: continue
+                tmpl = all_insn[insn_name]
                 
-                for comb_name, regs in reg_combs.items():
+                for comb_name, regs in RISCVRegisters.get_register_combinations().items():
                     dst, src1, src2 = regs
                     try:
                         if class_name == "CLASS5_LOAD":
-                            instr = template.format(dst=dst, base=RISCVRegisters.S0)
-                            # Memory-Tests haben spezielle Kategorie
-                            category = "LOAD"
+                            instr = tmpl.format(dst=dst, base=RISCVRegisters.S0)
                         elif class_name == "CLASS6_STORE":
-                            instr = template.format(src=dst, base=RISCVRegisters.S0)
-                            category = "STORE"
+                            instr = tmpl.format(src=dst, base=RISCVRegisters.S0)
                         elif class_name == "CLASS7_IMMEDIATE":
-                            valid_imms = RISCVInstructions.get_valid_immediate_range(insn_name)
-                            instr = template.format(dst=dst, src1=src1, imm=valid_imms[0])
-                            category = class_name
+                            imm = RISCVInstructions.get_valid_immediate_range(insn_name)[0]
+                            instr = tmpl.format(dst=dst, src1=src1, imm=imm)
                         else:
-                            instr = template.format(dst=dst, src1=src1, src2=src2)
-                            category = class_name
+                            instr = tmpl.format(dst=dst, src1=src1, src2=src2)
                         
-                        test = {
+                        tests.append({
                             "name": f"SINGLE_{class_name}_{insn_name}_{comb_name}",
                             "safe_name": f"SINGLE_{class_name}_{insn_name}_{comb_name}",
-                            "instructions": [(insn_name, instr)],
-                            "iterations": 300,
-                            "category": category,  # Hier wird die Kategorie gesetzt
-                            "instruction_count": 1,
+                            "instructions": [(insn_name, instr)], "iterations": 300,
+                            "category": class_name, "instruction_count": 1,
                             "description": f"Single {insn_name} with {comb_name}",
-                            "test_group": "single",
-                            "type": "latency",
-                            "test_value": -1,
-                            "value_type": "NONE"
-                        }
-                        tests.append(test)
-                    except:
-                        continue
+                            "test_group": "single", "type": "latency", "test_value": -1, "value_type": "NONE"
+                        })
+                    except: continue
         return tests
 
+
 class ZeroIdiomTestGenerator:
-    """Testet Zero-Idioms (sub rd, rs, rs und xor rd, rs, rs)."""
+    """Zero-Idioms (sub/xor)."""
     
     @staticmethod
     def generate_all():
         tests = []
-        
         print("\n      → Generating zero idiom tests...")
         
-        zero_instructions = [
-            ("sub", "sub {dst}, {src}, {src}"),
-            ("xor", "xor {dst}, {src}, {src}")
-        ]
-        
-        # Teste mit verschiedenen Registern
-        for insn_name, template in zero_instructions:
+        for insn_name, tmpl in [("sub", "sub {dst}, {src}, {src}"), ("xor", "xor {dst}, {src}, {src}")]:
             for reg in [RISCVRegisters.T0, RISCVRegisters.A0, RISCVRegisters.S0]:
-                instr = template.format(dst=reg, src=reg)
-                
-                test = {
+                instr = tmpl.format(dst=reg, src=reg)
+                tests.append({
                     "name": f"ZEROIDIOM_{insn_name}_{reg}",
                     "safe_name": f"ZEROIDIOM_{insn_name}_{reg}",
-                    "instructions": [(insn_name, instr)],
-                    "iterations": 500,
-                    "category": "CLASS1_ALU_ZERO",
-                    "instruction_count": 1,
+                    "instructions": [(insn_name, instr)], "iterations": 500,
+                    "category": "CLASS1_ALU_ZERO", "instruction_count": 1,
                     "description": f"Zero idiom: {insn_name} {reg}, {reg}, {reg}",
-                    "test_group": "zero_idioms",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
-                }
-                tests.append(test)
+                    "test_group": "zero_idioms", "type": "latency", "test_value": -1, "value_type": "NONE"
+                })
                 
-                # Auch als kurze Kette testen
-                chain = [
-                    (insn_name, instr),
-                    ("add", f"add {RISCVRegisters.T1}, {reg}, {RISCVRegisters.T2}")
-                ]
-                
-                test = {
+                tests.append({
                     "name": f"ZEROIDIOM_CHAIN_{insn_name}_{reg}",
                     "safe_name": f"ZEROIDIOM_CHAIN_{insn_name}_{reg}",
-                    "instructions": chain,
-                    "iterations": 300,
-                    "category": "CLASS1_ALU_ZERO_CHAIN",
-                    "instruction_count": 2,
+                    "instructions": [(insn_name, instr), ("add", f"add {RISCVRegisters.T1}, {reg}, {RISCVRegisters.T2}")],
+                    "iterations": 300, "category": "CLASS1_ALU_ZERO_CHAIN", "instruction_count": 2,
                     "description": f"Zero idiom chain: {insn_name} → add",
-                    "test_group": "zero_idioms",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
-                }
-                tests.append(test)
-        
+                    "test_group": "zero_idioms", "type": "latency", "test_value": -1, "value_type": "NONE"
+                })
         return tests
 
 
 class MixedClassTestGenerator:
-    """Cross-Class Dependency Chains - OHNE Load/Store für jetzt."""
+    """Cross-Class Dependency Chains."""
     
     @staticmethod
     def generate_all():
         tests = []
+        print("\n      → Generating mixed class tests...")
         
-        print("\n      → Generating mixed class tests (nur ALU)...")
-        
-        # 1. ALU vs Immediate (OK)
-        alu_insns = ["add", "xor"]
-        imm_insns = ["addi", "xori"]
-        
-        for alu in alu_insns:
-            for imm in imm_insns:
-                chain = [
-                    (alu, f"{alu} {RISCVRegisters.T0}, {RISCVRegisters.T1}, {RISCVRegisters.T2}"),
-                    (imm, f"{imm} {RISCVRegisters.T1}, {RISCVRegisters.T0}, 1"),
-                    (alu, f"{alu} {RISCVRegisters.T2}, {RISCVRegisters.T1}, {RISCVRegisters.T3}"),
-                ]
-                
+        # ALU vs Immediate
+        for alu in ["add","xor"]:
+            for imm in ["addi","xori"]:
                 tests.append({
                     "name": f"MIXED_ALU_IMM_{alu}_{imm}",
                     "safe_name": f"MIXED_ALU_IMM_{alu}_{imm}",
-                    "instructions": chain,
-                    "iterations": 300,
-                    "category": "MIXED_CLASS1_ALU_IMM",
-                    "instruction_count": 3,
-                    "description": "ALU vs Immediate - operand count influence",
-                    "test_group": "mixed",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
+                    "instructions": [
+                        (alu, f"{alu} {RISCVRegisters.T0}, {RISCVRegisters.T1}, {RISCVRegisters.T2}"),
+                        (imm, f"{imm} {RISCVRegisters.T1}, {RISCVRegisters.T0}, 1"),
+                        (alu, f"{alu} {RISCVRegisters.T2}, {RISCVRegisters.T1}, {RISCVRegisters.T3}"),
+                    ], "iterations": 300, "category": "MIXED_CLASS1_ALU_IMM", "instruction_count": 3,
+                    "description": "ALU vs Immediate", "test_group": "mixed", "type": "latency",
+                    "test_value": -1, "value_type": "NONE"
                 })
         
-        # 2. Shift → ALU (OK)
+        # Shift → ALU
         for shift in ["sll"]:
             for alu in ["add"]:
-                chain = [
-                    (shift, f"{shift} {RISCVRegisters.T0}, {RISCVRegisters.T1}, {RISCVRegisters.T2}"),
-                    (alu, f"{alu} {RISCVRegisters.T1}, {RISCVRegisters.T0}, {RISCVRegisters.T3}"),
-                ]
-                
                 tests.append({
                     "name": f"MIXED_SHIFT_ALU_{shift}_{alu}",
                     "safe_name": f"MIXED_SHIFT_ALU_{shift}_{alu}",
-                    "instructions": chain,
-                    "iterations": 300,
-                    "category": "MIXED_CLASS2_SHIFT_ALU",
-                    "instruction_count": 2,
-                    "description": "Shift → ALU - dedicated shifter vs shared ALU",
-                    "test_group": "mixed",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
+                    "instructions": [
+                        (shift, f"{shift} {RISCVRegisters.T0}, {RISCVRegisters.T1}, {RISCVRegisters.T2}"),
+                        (alu, f"{alu} {RISCVRegisters.T1}, {RISCVRegisters.T0}, {RISCVRegisters.T3}"),
+                    ], "iterations": 300, "category": "MIXED_CLASS2_SHIFT_ALU", "instruction_count": 2,
+                    "description": "Shift → ALU", "test_group": "mixed", "type": "latency",
+                    "test_value": -1, "value_type": "NONE"
                 })
-        
-        # Load/Store Tests werden später aktiviert
-        print("        Load/Store Tests werden später aktiviert")
-        
         return tests
 
+
 class MultiInstructionTestGenerator:
-    """Multi-Instruction Tests - Lange RAW Chains."""
+    """Multi-Instruction Tests - Lange Chains."""
     
     @staticmethod
     def generate_all():
-        tests = []
-        all_insn = RISCVInstructions.get_all_instructions()
-        
+        tests, all_insn = [], RISCVInstructions.get_all_instructions()
         print("\n      → Generating long RAW chains...")
         
-        # Für lange Ketten: Nur ALU-Operationen, keine Load/Store
-        for length in [10, 20, 30]:
-            # ADD-Kette
-            add_chain = LatencyRAWChainGenerator.create_raw_chain(
-                "add", all_insn["add"], "CLASS1_ALU", length, "mixed"
-            )
-            if add_chain:
-                tests.append({
-                    "name": f"LONG_RAW_ADD_{length}",
-                    "safe_name": f"LONG_RAW_ADD_{length}",
-                    "instructions": add_chain,
-                    "iterations": 150,
-                    "category": "CLASS1_ALU_LONG",
-                    "instruction_count": length,
-                    "description": f"Long RAW chain of {length} add instructions",
-                    "test_group": "long_chains",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
-                })
-            
-            # XOR-Kette
-            xor_chain = LatencyRAWChainGenerator.create_raw_chain(
-                "xor", all_insn["xor"], "CLASS1_ALU", length, "mixed"
-            )
-            if xor_chain:
-                tests.append({
-                    "name": f"LONG_RAW_XOR_{length}",
-                    "safe_name": f"LONG_RAW_XOR_{length}",
-                    "instructions": xor_chain,
-                    "iterations": 150,
-                    "category": "CLASS1_ALU_LONG",
-                    "instruction_count": length,
-                    "description": f"Long RAW chain of {length} xor instructions",
-                    "test_group": "long_chains",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
-                })
-        
+        for length in [10,20,30]:
+            for insn in ["add","xor"]:
+                chain = LatencyRAWChainGenerator.create_raw_chain(insn, all_insn[insn], "CLASS1_ALU", length, "mixed")
+                if chain:
+                    tests.append({
+                        "name": f"LONG_RAW_{insn.upper()}_{length}",
+                        "safe_name": f"LONG_RAW_{insn.upper()}_{length}",
+                        "instructions": chain, "iterations": 150, "category": "CLASS1_ALU_LONG",
+                        "instruction_count": length, "description": f"Long RAW chain of {length} {insn}",
+                        "test_group": "long_chains", "type": "latency", "test_value": -1, "value_type": "NONE"
+                    })
         return tests
-# Alias für Kompatibilität
-LatencyMultiGenerator = MultiInstructionTestGenerator

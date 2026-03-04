@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# scripts/base/config.py - Gemeinsame Pfad-Konfiguration
+# scripts/base/config.py
 
 import os
 
-# Diese Variablen werden in anderen Dateien verwendet
 __all__ = ['SCRIPT_DIR', 'PROJECT_ROOT', 'MAIN_DIR', 'TESTS_DIR', 'TEST_TYPES']
 
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,7 +11,6 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 MAIN_DIR = os.path.join(PROJECT_ROOT, "main")
 TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
 
-# Test-Typen für verschiedene Generatoren
 TEST_TYPES = {
     "latency": {
         "name": "LATENCY",
