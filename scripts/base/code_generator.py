@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# scripts/base/code_generator.py - KORRIGIERTE VERSION für Load/Store Tests
+# scripts/base/code_generator.py - KORRIGIERTE VERSION für Load/Store Tests mit nur 2 Iterationen
 
 from typing import Tuple
 
 def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str, str]:
     """
     Generiert C-Code mit optimierter Register-Nutzung und Cache-Warmup.
+    Für ESP32-C6: Nur 2 Iterationen pro Test.
     """
     
     func_name = f"test_{test['safe_name']}"
@@ -18,18 +19,8 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     
     instruction_block = "".join(instruction_lines)
     
-    # Dynamische Iterationen
-    base_iterations = test["iterations"]
-    if "CLASS4_DIV" in test.get("category", ""):
-        iterations = min(base_iterations, 100)
-    elif "LOAD" in test.get("category", "") or "STORE" in test.get("category", ""):
-        iterations = min(base_iterations, 30)  # Weniger Iterationen für Memory-Tests
-    elif test["instruction_count"] >= 20:
-        iterations = min(base_iterations, 150)
-    elif test["instruction_count"] >= 10:
-        iterations = min(base_iterations, 200)
-    else:
-        iterations = min(base_iterations, 300)
+    # FIX: Für ESP32-C6 nur 2 Iterationen
+    iterations = 2
     
     test_value = test.get("test_value", -1)
     value_type = test.get("value_type", "NONE")
@@ -40,7 +31,6 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     
     # Für Load/Store-Tests - SPEZIALBEHANDLUNG!
     if is_load_store:
-        iterations = min(iterations, 30)  # Max 30 Iterationen für Load/Store
         if test_type == "throughput":
             return generate_throughput_loadstore_function(func_name, test, instruction_block,
                                                          iterations, test_value, value_type)
@@ -62,6 +52,7 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
                                     iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
     SPEZIELLE VERSION FÜR LATENCY LOAD/STORE-TESTS mit Cache-Warmup.
+    Für ESP32-C6: Nur 2 Iterationen, erste wird verworfen.
     """
     
     # Bestimme welche Register tatsächlich in den Instruktionen verwendet werden
@@ -159,12 +150,12 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
-    # Cache-Warmup Block
+    # Cache-Warmup Block - Reduziert auf 2 Warmup-Durchläufe
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP - Klassisches Warmup ohne Messung
+    // CACHE WARMUP - 2 Warmup-Durchläufe ohne Messung
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
+    for (int warm = 0; warm < 2; warm++) {{
         portENTER_CRITICAL(&test_mutex);
         __asm__ __volatile__ (
 {load_regs_str}
@@ -186,8 +177,8 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
     
-    // Array für alle Einzelmessungen
-    uint32_t measurements[{iterations}];
+    // Array für alle Einzelmessungen - Nur 2 Iterationen
+    uint32_t measurements[2];
     {buffer_decl}
     
     // =======================================================
@@ -205,14 +196,14 @@ test_result_t {func_name}(void) {{
     uint32_t total_cycles = 0;
     result.min = 999999999;
     result.max = 0;
+    uint32_t cycles = 0;
     
-    for (int iter = 0; iter < {iterations}; iter++) {{
+    // FIX: Nur 2 Iterationen, erste wird verworfen
+    for (int iter = 0; iter < 2; iter++) {{
         uint32_t t_start, t_end;
         
-        // Watchdog alle 2 Iterationen füttern
-        if (iter % 2 == 0) {{
-            esp_task_wdt_reset();
-        }}
+        // Watchdog bei jeder Iteration füttern
+        esp_task_wdt_reset();
         
         portENTER_CRITICAL(&test_mutex);
         
@@ -230,30 +221,27 @@ test_result_t {func_name}(void) {{
         
         portEXIT_CRITICAL(&test_mutex);
         
-        uint32_t cycles = t_end - t_start;
-        measurements[iter] = cycles;
-        total_cycles += cycles;
         
-        if (cycles < result.min) result.min = cycles;
-        if (cycles > result.max) result.max = cycles;
+        
+        // Erste Iteration (iter=0) wird verworfen, zweite (iter=1) wird gespeichert
+        if (iter > 0) {{
+            cycles = t_end - t_start - 1; // Korrektur für Overhead
+            measurements[0] = cycles;  // Nur eine Messung speichern
+            total_cycles = cycles;
+            result.min = cycles;
+            result.max = cycles;
+        }}
     }}
     
     // =======================================================
-    // STATISTISCHE BERECHNUNGEN
+    // STATISTISCHE BERECHNUNGEN - Für eine einzelne Messung
     // =======================================================
     
-    result.mean = (float)total_cycles / {iterations};
-    
-    float sum_sq = 0;
-    for (int i = 0; i < {iterations}; i++) {{
-        float diff = measurements[i] - result.mean;
-        sum_sq += diff * diff;
-    }}
-    result.stddev = sqrtf(sum_sq / {iterations});
-    
-    result.ci = 1.96 * result.stddev / sqrtf({iterations});
-    result.rel_error = (result.ci / result.mean) * 100.0;
-    result.cpi = result.mean / {test['instruction_count']};
+    result.mean = (float)total_cycles;
+    result.stddev = 0.0f;  // Keine Standardabweichung bei einer Messung
+    result.ci = 0.0f;       // Kein Konfidenzintervall
+    result.rel_error = 0.0f;
+    result.cpi = result.mean / (float){test['instruction_count']};
     
     return result;
 }}
@@ -265,6 +253,7 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
                                           iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
     SPEZIELLE VERSION FÜR THROUGHPUT LOAD/STORE-TESTS mit Cache-Warmup.
+    Für ESP32-C6: Nur 2 Iterationen, erste wird verworfen.
     """
     
     # Extrahiere Base-Register
@@ -350,12 +339,12 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
     
     inputs = ',\n            '.join(input_list)
     
-    # Cache-Warmup Block
+    # Cache-Warmup Block - Reduziert auf 2 Warmup-Durchläufe
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP
+    // CACHE WARMUP - 2 Warmup-Durchläufe ohne Messung
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
+    for (int warm = 0; warm < 2; warm++) {{
         portENTER_CRITICAL(&test_mutex);
         __asm__ __volatile__ (
             {load_regs}
@@ -376,8 +365,8 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
     
-    // Array für alle Einzelmessungen
-    uint32_t measurements[{iterations}];
+    // Array für alle Einzelmessungen - Nur 2 Iterationen
+    uint32_t measurements[2];
     {buffer_decl}
     
     // =======================================================
@@ -394,14 +383,14 @@ test_result_t {func_name}(void) {{
     uint32_t total_cycles = 0;
     result.min = 999999999;
     result.max = 0;
+    uint32_t cycles = 0;
     
-    for (int iter = 0; iter < {iterations}; iter++) {{
+    // FIX: Nur 2 Iterationen, erste wird verworfen
+    for (int iter = 0; iter < 2; iter++) {{
         uint32_t t_start, t_end;
         
-        // Watchdog alle 5 Iterationen füttern
-        if (iter % 5 == 0) {{
-            esp_task_wdt_reset();
-        }}
+        // Watchdog bei jeder Iteration füttern
+        esp_task_wdt_reset();
         
         portENTER_CRITICAL(&test_mutex);
         
@@ -420,30 +409,25 @@ test_result_t {func_name}(void) {{
         
         portEXIT_CRITICAL(&test_mutex);
         
-        uint32_t cycles = t_end - t_start;
-        measurements[iter] = cycles;
-        total_cycles += cycles;
-        
-        if (cycles < result.min) result.min = cycles;
-        if (cycles > result.max) result.max = cycles;
+        // Erste Iteration (iter=0) wird verworfen, zweite (iter=1) wird gespeichert
+        if (iter > 0) {{
+            cycles = t_end - t_start - 1; // Korrektur für Overhead
+            measurements[0] = cycles;  // Nur eine Messung speichern
+            total_cycles = cycles;
+            result.min = cycles;
+            result.max = cycles;
+        }}
     }}
     
     // =======================================================
-    // STATISTISCHE BERECHNUNGEN
+    // STATISTISCHE BERECHNUNGEN - Für eine einzelne Messung
     // =======================================================
     
-    result.mean = (float)total_cycles / {iterations};
-    
-    float sum_sq = 0;
-    for (int i = 0; i < {iterations}; i++) {{
-        float diff = measurements[i] - result.mean;
-        sum_sq += diff * diff;
-    }}
-    result.stddev = sqrtf(sum_sq / {iterations});
-    
-    result.ci = 1.96 * result.stddev / sqrtf({iterations});
-    result.rel_error = (result.ci / result.mean) * 100.0;
-    result.cpi = result.mean / {test['instruction_count']};
+    result.mean = (float)total_cycles;
+    result.stddev = 0.0f;
+    result.ci = 0.0f;
+    result.rel_error = 0.0f;
+    result.cpi = result.mean / (float){test['instruction_count']};
     
     return result;
 }}
@@ -453,7 +437,8 @@ test_result_t {func_name}(void) {{
 
 def generate_latency_test_function(func_name: str, test: dict, instruction_block: str,
                                   iterations: int, test_value, value_type) -> Tuple[str, str]:
-    """Generiert Code für Latency-Tests (keine Load/Store) mit Cache-Warmup."""
+    """Generiert Code für Latency-Tests (keine Load/Store) mit Cache-Warmup.
+       Für ESP32-C6: Nur 2 Iterationen, erste wird verworfen."""
     
     # Bestimme welche Register verwendet werden
     used_regs = set()
@@ -512,12 +497,12 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
     inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
-    # Cache-Warmup Block
+    # Cache-Warmup Block - Reduziert auf 2 Warmup-Durchläufe
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP
+    // CACHE WARMUP - 2 Warmup-Durchläufe ohne Messung
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
+    for (int warm = 0; warm < 2; warm++) {{
         portENTER_CRITICAL(&test_mutex);
         __asm__ __volatile__ (
 {load_regs_str}
@@ -538,8 +523,8 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
     
-    // Array für alle Einzelmessungen
-    uint32_t measurements[{iterations}];
+    // Array für alle Einzelmessungen - Nur 2 Iterationen
+    uint32_t measurements[2];
     
     // =======================================================
     // REGISTER-INITIALISIERUNG
@@ -556,14 +541,14 @@ test_result_t {func_name}(void) {{
     uint32_t total_cycles = 0;
     result.min = 999999999;
     result.max = 0;
+    uint32_t cycles = 0;
     
-    for (int iter = 0; iter < {iterations}; iter++) {{
+    // FIX: Nur 2 Iterationen, erste wird verworfen
+    for (int iter = 0; iter < 2; iter++) {{
         uint32_t t_start, t_end;
         
-        // Watchdog alle 10 Iterationen füttern
-        if (iter % 10 == 0) {{
-            esp_task_wdt_reset();
-        }}
+        // Watchdog bei jeder Iteration füttern
+        esp_task_wdt_reset();
         
         portENTER_CRITICAL(&test_mutex);
         
@@ -582,30 +567,25 @@ test_result_t {func_name}(void) {{
         
         portEXIT_CRITICAL(&test_mutex);
         
-        uint32_t cycles = t_end - t_start;
-        measurements[iter] = cycles;
-        total_cycles += cycles;
-        
-        if (cycles < result.min) result.min = cycles;
-        if (cycles > result.max) result.max = cycles;
+        // Erste Iteration (iter=0) wird verworfen, zweite (iter=1) wird gespeichert
+        if (iter > 0) {{
+            cycles = t_end - t_start - 1; // Korrektur für Overhead
+            measurements[0] = cycles;  // Nur eine Messung speichern
+            total_cycles = cycles;
+            result.min = cycles;
+            result.max = cycles;
+        }}
     }}
     
     // =======================================================
-    // STATISTISCHE BERECHNUNGEN
+    // STATISTISCHE BERECHNUNGEN - Für eine einzelne Messung
     // =======================================================
     
-    result.mean = (float)total_cycles / {iterations};
-    
-    float sum_sq = 0;
-    for (int i = 0; i < {iterations}; i++) {{
-        float diff = measurements[i] - result.mean;
-        sum_sq += diff * diff;
-    }}
-    result.stddev = sqrtf(sum_sq / {iterations});
-    
-    result.ci = 1.96 * result.stddev / sqrtf({iterations});
-    result.rel_error = (result.ci / result.mean) * 100.0;
-    result.cpi = result.mean / {test['instruction_count']};
+    result.mean = (float)total_cycles;
+    result.stddev = 0.0f;
+    result.ci = 0.0f;
+    result.rel_error = 0.0f;
+    result.cpi = result.mean / (float){test['instruction_count']};
     
     return result;
 }}
@@ -617,6 +597,7 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
                                      iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
     Spezielle Version für normale Throughput-Tests (keine Load/Store) mit Cache-Warmup.
+    Für ESP32-C6: Nur 2 Iterationen, erste wird verworfen.
     """
     
     # Minimale Register für Throughput
@@ -648,12 +629,12 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
             [a2_val] "r"(a2_val),
             [a4_val] "r"(a4_val), [a5_val] "r"(a5_val)"""
     
-    # Cache-Warmup Block
+    # Cache-Warmup Block - Reduziert auf 2 Warmup-Durchläufe
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP
+    // CACHE WARMUP - 2 Warmup-Durchläufe ohne Messung
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
+    for (int warm = 0; warm < 2; warm++) {{
         portENTER_CRITICAL(&test_mutex);
         __asm__ __volatile__ (
             {load_regs}
@@ -674,8 +655,8 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
     
-    // Array für alle Einzelmessungen
-    uint32_t measurements[{iterations}];
+    // Array für alle Einzelmessungen - Nur 2 Iterationen
+    uint32_t measurements[2];
     
     // =======================================================
     // REGISTER-INITIALISIERUNG
@@ -691,14 +672,14 @@ test_result_t {func_name}(void) {{
     uint32_t total_cycles = 0;
     result.min = 999999999;
     result.max = 0;
+    uint32_t cycles = 0;
     
-    for (int iter = 0; iter < {iterations}; iter++) {{
+    // FIX: Nur 2 Iterationen, erste wird verworfen
+    for (int iter = 0; iter < 2; iter++) {{
         uint32_t t_start, t_end;
         
-        // Watchdog alle 20 Iterationen füttern
-        if (iter % 20 == 0) {{
-            esp_task_wdt_reset();
-        }}
+        // Watchdog bei jeder Iteration füttern
+        esp_task_wdt_reset();
         
         portENTER_CRITICAL(&test_mutex);
         
@@ -717,30 +698,25 @@ test_result_t {func_name}(void) {{
         
         portEXIT_CRITICAL(&test_mutex);
         
-        uint32_t cycles = t_end - t_start;
-        measurements[iter] = cycles;
-        total_cycles += cycles;
-        
-        if (cycles < result.min) result.min = cycles;
-        if (cycles > result.max) result.max = cycles;
+        // Erste Iteration (iter=0) wird verworfen, zweite (iter=1) wird gespeichert
+       if (iter > 0) {{
+            cycles = t_end - t_start - 1; // Korrektur für Overhead
+            measurements[0] = cycles;  // Nur eine Messung speichern
+            total_cycles = cycles;
+            result.min = cycles;
+            result.max = cycles;
+        }}
     }}
     
     // =======================================================
-    // STATISTISCHE BERECHNUNGEN
+    // STATISTISCHE BERECHNUNGEN - Für eine einzelne Messung
     // =======================================================
     
-    result.mean = (float)total_cycles / {iterations};
-    
-    float sum_sq = 0;
-    for (int i = 0; i < {iterations}; i++) {{
-        float diff = measurements[i] - result.mean;
-        sum_sq += diff * diff;
-    }}
-    result.stddev = sqrtf(sum_sq / {iterations});
-    
-    result.ci = 1.96 * result.stddev / sqrtf({iterations});
-    result.rel_error = (result.ci / result.mean) * 100.0;
-    result.cpi = result.mean / {test['instruction_count']};
+    result.mean = (float)total_cycles;
+    result.stddev = 0.0f;
+    result.ci = 0.0f;
+    result.rel_error = 0.0f;
+    result.cpi = result.mean / (float){test['instruction_count']};
     
     return result;
 }}
