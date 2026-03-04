@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# scripts/base/code_generator.py - KORRIGIERTE VERSION für Load/Store Tests
+# scripts/base/code_generator.py - KORRIGIERTE VERSION mit verbessertem Warmup
 
 from typing import Tuple
 
 def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str, str]:
     """
-    Generiert C-Code mit optimierter Register-Nutzung und Cache-Warmup.
+    Generiert C-Code mit optimierter Register-Nutzung und verbessertem Cache-Warmup.
     """
     
     func_name = f"test_{test['safe_name']}"
@@ -61,7 +61,7 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
 def generate_loadstore_test_function(func_name: str, test: dict, instruction_block: str,
                                     iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
-    SPEZIELLE VERSION FÜR LATENCY LOAD/STORE-TESTS mit Cache-Warmup.
+    SPEZIELLE VERSION FÜR LATENCY LOAD/STORE-TESTS mit verbessertem Warmup.
     """
     
     # Bestimme welche Register tatsächlich in den Instruktionen verwendet werden
@@ -159,18 +159,27 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
-    # Cache-Warmup Block
+    # VERBESSERTER WARMUP BLOCK - angelehnt an ARM Beispiel
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP - Klassisches Warmup ohne Messung
+    // CACHE WARMUP - Verbesserte Version mit 2 Warmup-Durchläufen
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
-        portENTER_CRITICAL(&test_mutex);
+    for (int warm = 0; warm < 2; warm++) {{
+        // Register initialisieren und PMU Counter in t3 (wie x20 im ARM Beispiel)
         __asm__ __volatile__ (
 {load_regs_str}
+            "li t0, 1\\n"
+            "li t1, 0\\n"
+            "li t2, 0\\n"
             "fence\\n"
+            "csrr t3, 0x7E2\\n"  // PMU Counter lesen
+            : : {inputs_str} : {clobber_str}
+        );
+        
+        // Die zu testenden Instruktionen im Warmup-Loop
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
 {instruction_block}
-            "fence\\n"
             : : {inputs_str} : {clobber_str}
         );
         portEXIT_CRITICAL(&test_mutex);
@@ -264,7 +273,7 @@ test_result_t {func_name}(void) {{
 def generate_throughput_loadstore_function(func_name: str, test: dict, instruction_block: str,
                                           iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
-    SPEZIELLE VERSION FÜR THROUGHPUT LOAD/STORE-TESTS mit Cache-Warmup.
+    SPEZIELLE VERSION FÜR THROUGHPUT LOAD/STORE-TESTS mit verbessertem Warmup.
     """
     
     # Extrahiere Base-Register
@@ -276,7 +285,7 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
                 base_registers.add(base_part)
     
     # Minimale Register für Throughput Load/Store
-    clobber_list = ['"t0"', '"t1"', '"t2"', '"a2"', '"a4"', '"a5"', '"memory"']
+    clobber_list = ['"t0"', '"t1"', '"t2"', '"t3"', '"a2"', '"a4"', '"a5"', '"memory"']
     for base_reg in base_registers:
         clobber_list.append(f'"{base_reg}"')
     clobber_str = ', '.join(clobber_list)
@@ -302,6 +311,7 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
         '    uint32_t t0_val = 0x11111111;',
         '    uint32_t t1_val = 0x22222222;',
         '    uint32_t t2_val = 0x33333333;',
+        '    uint32_t t3_val = 0;',  # Für PMU Counter
         '    uint32_t a2_val = 0xAAAAAAAA;',
         '    uint32_t a4_val = 0xBBBBBBBB;',
         '    uint32_t a5_val = 0xCCCCCCCC;',
@@ -350,18 +360,27 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
     
     inputs = ',\n            '.join(input_list)
     
-    # Cache-Warmup Block
+    # VERBESSERTER WARMUP BLOCK
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP
+    // CACHE WARMUP - Verbesserte Version mit 2 Warmup-Durchläufen
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
-        portENTER_CRITICAL(&test_mutex);
+    for (int warm = 0; warm < 2; warm++) {{
+        // Register initialisieren und PMU Counter in t3
         __asm__ __volatile__ (
             {load_regs}
+            "li t0, 1\\n"
+            "li t1, 0\\n"
+            "li t2, 0\\n"
             "fence\\n"
+            "csrr t3, 0x7E2\\n"
+            : : {inputs} : {clobber_str}
+        );
+        
+        // Die zu testenden Instruktionen im Warmup-Loop
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
 {instruction_block}
-            "fence\\n"
             : : {inputs} : {clobber_str}
         );
         portEXIT_CRITICAL(&test_mutex);
@@ -453,7 +472,7 @@ test_result_t {func_name}(void) {{
 
 def generate_latency_test_function(func_name: str, test: dict, instruction_block: str,
                                   iterations: int, test_value, value_type) -> Tuple[str, str]:
-    """Generiert Code für Latency-Tests (keine Load/Store) mit Cache-Warmup."""
+    """Generiert Code für Latency-Tests (keine Load/Store) mit verbessertem Warmup."""
     
     # Bestimme welche Register verwendet werden
     used_regs = set()
@@ -467,8 +486,11 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
     
     # Für lange Ketten: Reduziere die Register
     if len(test["instructions"]) > 10:
-        important_regs = {'t0', 't1', 't2', 'a2', 'a4', 'a5', 's0'}
+        important_regs = {'t0', 't1', 't2', 't3', 'a2', 'a4', 'a5', 's0'}
         used_regs = used_regs.intersection(important_regs)
+    
+    # Stelle sicher dass t3 für PMU Counter dabei ist
+    used_regs.add('t3')
     
     # Clobber-Liste
     clobber_list = [f'"{reg}"' for reg in sorted(used_regs)]
@@ -479,10 +501,10 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
     
     reg_values = {
         't0': '0x11111111', 't1': '0x22222222', 't2': '0x33333333',
-        't3': '0x44444444', 't4': '0x55555555', 't5': '0x66666666',
-        't6': '0x77777777',
+        't3': '0',  # Für PMU Counter
+        't4': '0x44444444', 't5': '0x55555555', 't6': '0x66666666',
         'a0': '0x88888888', 'a1': '0x99999999', 'a2': '0xAAAAAAAA',
-        'a3': '0x12345678',  # Dummy für a3
+        'a3': '0x12345678',
         'a4': '0xBBBBBBBB', 'a5': '0xCCCCCCCC', 'a6': '0xDDDDDDDD',
         'a7': '0xEEEEEEEE',
         's0': '0x11111111', 's1': '0x22222222', 's2': '0x33333333',
@@ -512,18 +534,27 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
     inputs_str = ',\n            '.join(input_list) if input_list else ""
     reg_init_str = '\n'.join(reg_init_code)
     
-    # Cache-Warmup Block
+    # VERBESSERTER WARMUP BLOCK
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP
+    // CACHE WARMUP - Verbesserte Version mit 2 Warmup-Durchläufen
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
-        portENTER_CRITICAL(&test_mutex);
+    for (int warm = 0; warm < 2; warm++) {{
+        // Register initialisieren und PMU Counter in t3
         __asm__ __volatile__ (
 {load_regs_str}
+            "li t0, 1\\n"
+            "li t1, 0\\n"
+            "li t2, 0\\n"
             "fence\\n"
+            "csrr t3, 0x7E2\\n"
+            : : {inputs_str} : {clobber_str}
+        );
+        
+        // Die zu testenden Instruktionen im Warmup-Loop
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
 {instruction_block}
-            "fence\\n"
             : : {inputs_str} : {clobber_str}
         );
         portEXIT_CRITICAL(&test_mutex);
@@ -616,11 +647,11 @@ test_result_t {func_name}(void) {{
 def generate_throughput_test_function(func_name: str, test: dict, instruction_block: str,
                                      iterations: int, test_value, value_type) -> Tuple[str, str]:
     """
-    Spezielle Version für normale Throughput-Tests (keine Load/Store) mit Cache-Warmup.
+    Spezielle Version für normale Throughput-Tests (keine Load/Store) mit verbessertem Warmup.
     """
     
     # Minimale Register für Throughput
-    clobber_list = ['"t0"', '"t1"', '"t2"', '"a2"', '"a4"', '"a5"', '"memory"']
+    clobber_list = ['"t0"', '"t1"', '"t2"', '"t3"', '"a2"', '"a4"', '"a5"', '"memory"']
     clobber_str = ', '.join(clobber_list)
     
     # Einfache Register-Initialisierung
@@ -628,6 +659,7 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
     uint32_t t0_val = 0x11111111;
     uint32_t t1_val = 0x22222222;
     uint32_t t2_val = 0x33333333;
+    uint32_t t3_val = 0;  // Für PMU Counter
     uint32_t a2_val = 0xAAAAAAAA;
     uint32_t a4_val = 0xBBBBBBBB;
     uint32_t a5_val = 0xCCCCCCCC;
@@ -648,18 +680,27 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
             [a2_val] "r"(a2_val),
             [a4_val] "r"(a4_val), [a5_val] "r"(a5_val)"""
     
-    # Cache-Warmup Block
+    # VERBESSERTER WARMUP BLOCK
     warmup_code = f"""
     // =======================================================
-    // CACHE WARMUP
+    // CACHE WARMUP - Verbesserte Version mit 2 Warmup-Durchläufen
     // =======================================================
-    for (int warm = 0; warm < 10; warm++) {{
-        portENTER_CRITICAL(&test_mutex);
+    for (int warm = 0; warm < 2; warm++) {{
+        // Register initialisieren und PMU Counter in t3
         __asm__ __volatile__ (
             {load_regs}
+            "li t0, 1\\n"
+            "li t1, 0\\n"
+            "li t2, 0\\n"
             "fence\\n"
+            "csrr t3, 0x7E2\\n"
+            : : {inputs} : {clobber_str}
+        );
+        
+        // Die zu testenden Instruktionen im Warmup-Loop
+        portENTER_CRITICAL(&test_mutex);
+        __asm__ __volatile__ (
 {instruction_block}
-            "fence\\n"
             : : {inputs} : {clobber_str}
         );
         portEXIT_CRITICAL(&test_mutex);
