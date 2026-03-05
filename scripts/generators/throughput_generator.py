@@ -12,8 +12,10 @@ class ThroughputBaseGenerator:
     
     @staticmethod
     def _get_category(insn_name: str) -> str:
-        if insn_name in ["lw","lh","lb","lbu","lhu","sw","sb","sh"]: return "THROUGHPUT_MEMORY"
-        if insn_name in ["mul","mulh","mulhu","div","divu","rem","remu"]: return "THROUGHPUT_MULTI_CYCLE"
+        if insn_name in ["lw", "lh", "lb", "lbu", "lhu", "sw", "sb", "sh"]:
+            return "THROUGHPUT_MEMORY"
+        if insn_name in ["mul", "mulh", "mulhu", "div", "divu", "rem", "remu"]:
+            return "THROUGHPUT_MULTI_CYCLE"
         return "THROUGHPUT_SINGLE_ISSUE"
     
     @staticmethod
@@ -22,30 +24,53 @@ class ThroughputBaseGenerator:
         
         for insn_name, tmpl in all_insn.items():
             if insn_name == "div": continue
-            for count in [4,8,16]:
+            for count in [4, 8, 16]:
                 regs = RISCVRegisters.get_independent_registers(count)
                 instrs = []
                 
                 for i in range(count):
                     dst = regs[i % len(regs)]
-                    if insn_name in ["lw","lh","lb","lbu","lhu"]:
-                        instrs.append((insn_name, tmpl.format(dst=dst, base=RISCVRegisters.S0)))
-                    elif insn_name in ["sw","sb","sh"]:
-                        instrs.append((insn_name, tmpl.format(src=dst, base=RISCVRegisters.S0)))
-                    elif insn_name in ["addi","xori","ori","andi","slli","srli","srai","slti","sltiu"]:
-                        src1 = regs[(i+1)%len(regs)]
-                        instrs.append((insn_name, tmpl.format(dst=dst, src1=src1, imm=1)))
+                    
+                    if insn_name in ["lb", "lh", "lw", "lbu", "lhu"]:
+                        offset = (i * 4) % 64
+                        instr = tmpl.format(dst=dst, base=RISCVRegisters.BASE_REG, offset=offset)
+                        instrs.append((insn_name, instr))
+                    
+                    elif insn_name in ["sb", "sh", "sw"]:
+                        offset = (i * 4) % 64
+                        instr = tmpl.format(src=dst, base=RISCVRegisters.BASE_REG, offset=offset)
+                        instrs.append((insn_name, instr))
+                    
+                    elif insn_name in ["addi", "xori", "ori", "andi", "slli", "srli", "srai", "slti", "sltiu"]:
+                        src1 = regs[(i+1) % len(regs)]
+                        instr = tmpl.format(dst=dst, src1=src1, imm=1)
+                        instrs.append((insn_name, instr))
+                    
+                    elif insn_name in ["mul", "mulh", "mulhu", "mulhsu", "divu", "rem", "remu"]:
+                        src1 = regs[(i+1) % len(regs)]
+                        src2 = regs[(i+2) % len(regs)]
+                        instr = tmpl.format(dst=dst, src1=src1, src2=src2)
+                        instrs.append((insn_name, instr))
+                    
                     else:
-                        src1, src2 = regs[(i+1)%len(regs)], regs[(i+2)%len(regs)]
-                        instrs.append((insn_name, tmpl.format(dst=dst, src1=src1, src2=src2)))
+                        src1 = regs[(i+1) % len(regs)]
+                        src2 = regs[(i+2) % len(regs)]
+                        instr = tmpl.format(dst=dst, src1=src1, src2=src2)
+                        instrs.append((insn_name, instr))
+                
+                category = ThroughputBaseGenerator._get_category(insn_name)
                 
                 tests.append({
                     "name": f"THROUGHPUT_{insn_name}_{count}",
                     "safe_name": f"THROUGHPUT_{insn_name}_{count}",
-                    "instructions": instrs, "iterations": max(1,3000//count),
-                    "category": ThroughputBaseGenerator._get_category(insn_name),
-                    "instruction_count": count, "group": "throughput_base",
-                    "test_value": -1, "value_type": "NONE", "type": "throughput"
+                    "instructions": instrs,
+                    "iterations": max(1, 3000 // count),
+                    "category": category,
+                    "instruction_count": count,
+                    "group": "throughput_base",
+                    "test_value": -1,
+                    "value_type": "NONE",
+                    "type": "throughput"
                 })
         return tests
 
@@ -94,7 +119,6 @@ class ThroughputComparisonGenerator:
             vtype = TestValueRegistry.get_value_category(value)
             count = 8
             
-            # FREE
             regs = RISCVRegisters.get_independent_registers(count)
             free_instrs = [("div", tmpl.format(dst=regs[i%len(regs)], 
                            src1=regs[(i+1)%len(regs)], src2=regs[(i+2)%len(regs)])) for i in range(count)]
@@ -108,7 +132,6 @@ class ThroughputComparisonGenerator:
                 "test_value": value, "value_type": vtype, "type": "throughput"
             })
             
-            # DEP
             last_dst, dep_instrs = RISCVRegisters.T0, []
             for i in range(count):
                 dst = RISCVRegisters.CHAIN_REGS[i % len(RISCVRegisters.CHAIN_REGS)]

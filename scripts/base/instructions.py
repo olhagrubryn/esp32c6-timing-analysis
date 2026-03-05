@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # scripts/base/instructions.py
 
-from typing import Dict, Set, List, Tuple
+from typing import Dict, Set, List
 
 class RISCVInstructions:
     """Datenbank aller RISC-V Instruktionen."""
@@ -31,16 +31,16 @@ class RISCVInstructions:
             "divu":  "divu {dst}, {src1}, {src2}",
             "rem":   "rem {dst}, {src1}, {src2}",
             "remu":  "remu {dst}, {src1}, {src2}",
-            # Load
-            "lb":   "lb {dst}, 0({base})",
-            "lh":   "lh {dst}, 0({base})",
-            "lw":   "lw {dst}, 0({base})",
-            "lbu":  "lbu {dst}, 0({base})",
-            "lhu":  "lhu {dst}, 0({base})",
-            # Store
-            "sb":   "sb {src}, 0({base})",
-            "sh":   "sh {src}, 0({base})",
-            "sw":   "sw {src}, 0({base})",
+            # Load (mit offset)
+            "lb":   "lb {dst}, {offset}({base})",
+            "lh":   "lh {dst}, {offset}({base})",
+            "lw":   "lw {dst}, {offset}({base})",
+            "lbu":  "lbu {dst}, {offset}({base})",
+            "lhu":  "lhu {dst}, {offset}({base})",
+            # Store (mit offset)
+            "sb":   "sb {src}, {offset}({base})",
+            "sh":   "sh {src}, {offset}({base})",
+            "sw":   "sw {src}, {offset}({base})",
             # Immediate
             "addi":  "addi {dst}, {src1}, {imm}",
             "xori":  "xori {dst}, {src1}, {imm}",

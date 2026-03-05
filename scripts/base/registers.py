@@ -14,10 +14,17 @@ class RISCVRegisters:
     S0, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11 = \
         "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11"
     
+    # Zero register
+    ZERO = "x0"
+    
+    # Return address register
+    RA = "ra"
+    
     # Register-Gruppen
     ALL_WORK_REGS = [T0,T1,T2,T3,T4,T5,T6,A0,A1,A2,A3,A4,A5,A6,A7,S0,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11]
-    CHAIN_REGS = [T0,T1,T2,T3,T4,T5,T6,A0,A1,A2,A4,A5,A6,A7]
-    BASE_REGS = [S0, S1, S2]
+    CHAIN_REGS = [T0,T1,T2,T3,T4,T5,T6,A0,A1,A2,A4,A5,A6,A7]  # ohne a3
+    BASE_REG = A3  # a3 ist reserviert als Basiszeiger für Load/Store
+    BASE_REGS = [S0, S1, S2]   # weitere mögliche Basisregister (falls benötigt)
     INDEPENDENT_REGS = CHAIN_REGS
     
     @classmethod
@@ -49,8 +56,8 @@ class RISCVRegisters:
     
     @classmethod
     def get_base_pointers(cls) -> list:
-        return cls.BASE_REGS
+        return [cls.BASE_REG]   # nur a3 als Basis
     
     @classmethod
     def validate_register(cls, reg: str) -> bool:
-        return reg in {'t0','t1','t2','t3','t4','t5','t6','a0','a1','a2','a3','a4','a5','a6','a7','s0','s1','s2','s3','s4','s5','s6','s7','s8','s9','s10','s11'}
+        return reg in {'t0','t1','t2','t3','t4','t5','t6','a0','a1','a2','a3','a4','a5','a6','a7','s0','s1','s2','s3','s4','s5','s6','s7','s8','s9','s10','s11','ra','x0'}

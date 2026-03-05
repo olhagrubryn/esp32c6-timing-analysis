@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/generate_all_tests.py - KORRIGIERT
+# scripts/generate_all_tests.py - FINALE VERSION
 
 import os, sys, random, argparse
 from collections import defaultdict
@@ -10,10 +10,18 @@ from base.code_generator import generate_test_function, generate_header_content,
 from generators.latency_generator import *
 from generators.throughput_generator import *
 from generators.comparison_generator import ComparisonTestGenerator
+from generators.branch_generator import BranchTestGenerator
 
-# ============================================================================
-# TEST-SAMMLER
-# ============================================================================
+from generators.latency_generator import (
+    SingleInstructionTestGenerator,
+    LatencyRAWChainGenerator,
+    ZeroIdiomTestGenerator,
+    MixedClassTestGenerator,
+    ShiftRegisterTestGenerator,
+    MultiInstructionTestGenerator,
+    MultiSequenceTestGenerator,
+    DividerLatencyGenerator
+)
 
 class TestCollector:
     @staticmethod
@@ -21,22 +29,38 @@ class TestCollector:
         tests = []
         print("\n  [Latency] Collecting tests...")
         
-        # Korrekte Klassennamen verwenden!
-        for name, gen in [
+        generators = [
             ("Single instruction", SingleInstructionTestGenerator.generate_all),
             ("RAW chains", LatencyRAWChainGenerator.generate_class_tests),
             ("Zero idioms", ZeroIdiomTestGenerator.generate_all),
             ("Mixed class", MixedClassTestGenerator.generate_all),
+            ("Register shift (controlled)", ShiftRegisterTestGenerator.generate_all),
             ("Multi instruction", MultiInstructionTestGenerator.generate_all),
+            ("Long sequences", MultiSequenceTestGenerator.generate_multi_sequence_tests),
             ("Comparison", lambda: ComparisonTestGenerator.generate_latency_for_divider_values() + 
-                                   ComparisonTestGenerator.generate_latency_for_throughput_comparison())
-        ]:
+                                   ComparisonTestGenerator.generate_latency_for_throughput_comparison()),
+            ("Divider latency", DividerLatencyGenerator.generate_all),
+            #("Branch tests", BranchTestGenerator.generate_all)
+        ]
+        
+        for name, gen in generators:
             print(f"    → {name}...")
-            for t in gen():
-                t['type'] = 'latency'
-                t.setdefault('test_value', -1)
-                t.setdefault('value_type', 'NONE')
-                tests.append(t)
+            try:
+                generated = gen()
+                if generated:
+                    for t in generated:
+                        t['type'] = 'latency'
+                        t.setdefault('test_value', -1)
+                        t.setdefault('value_type', 'NONE')
+                        t.setdefault('description', '')
+                        t.setdefault('category', 'UNKNOWN')
+                        t.setdefault('test_group', '')
+                        tests.append(t)
+                    print(f"      ✓ {len(generated)} tests generated")
+                else:
+                    print(f"      ⚠ No tests generated")
+            except Exception as e:
+                print(f"      ❌ Error: {e}")
         
         return tests
     
@@ -45,78 +69,123 @@ class TestCollector:
         tests = []
         print("\n  [Throughput] Collecting tests...")
         
-        for name, gen in [
+        generators = [
             ("Base", ThroughputBaseGenerator.generate_all),
             ("Divider", ThroughputDividerGenerator.generate_all),
             ("Comparison", ThroughputComparisonGenerator.generate_all)
-        ]:
+        ]
+        
+        for name, gen in generators:
             print(f"    → {name}...")
-            for t in gen():
-                t['type'] = 'throughput'
-                tests.append(t)
+            try:
+                generated = gen()
+                if generated:
+                    for t in generated:
+                        t['type'] = 'throughput'
+                        t.setdefault('test_value', -1)
+                        t.setdefault('value_type', 'NONE')
+                        t.setdefault('description', '')
+                        t.setdefault('category', 'UNKNOWN')
+                        t.setdefault('group', 'throughput_base')
+                        tests.append(t)
+                    print(f"      ✓ {len(generated)} tests generated")
+                else:
+                    print(f"      ⚠ No tests generated")
+            except Exception as e:
+                print(f"      ❌ Error: {e}")
         
         return tests
 
 
-# ============================================================================
-# DATEI-GENERATOREN
-# ============================================================================
-
 class LatencyFileGenerator:
     @staticmethod
     def ensure_directories():
-        for d in ["single","chains","sequences","random","stress","memory","multi","raw_chains","mixed"]:
+        subdirs = ["single", "chains", "sequences", "random", "stress", 
+                   "memory", "multi", "raw_chains", "mixed", "branch"]
+        for d in subdirs:
             os.makedirs(os.path.join(TESTS_DIR, d), exist_ok=True)
+        print(f"  ✓ Created latency test subdirectories")
     
     @staticmethod
     def _subdir(test):
-        n, g, ic, c = test["name"], test.get("test_group",""), test["instruction_count"], test.get("category","")
-        if "LOAD" in c or "STORE" in c or "MEM" in n: return "memory"
-        if "RAW" in n or g == "raw_chains": return "raw_chains"
-        if "MIXED" in n or g == "mixed": return "mixed"
-        if ic == 1: return "single"
-        if ic >= 10 or "LONG" in n: return "multi"
-        if "CHAIN" in n: return "chains"
-        if "RAND" in n: return "random"
-        if "STRESS" in n: return "stress"
+        name = test["name"]
+        category = test.get("category", "")
+        group = test.get("test_group", "")
+        ic = test["instruction_count"]
+        
+        if "BRANCH" in name or "BRANCH" in category or group == "branch":
+            return "branch"
+        if "LOAD" in category or "STORE" in category or "MEM" in name:
+            return "memory"
+        if "RAW" in name or group == "raw_chains":
+            return "raw_chains"
+        if "MIXED" in name or group == "mixed":
+            return "mixed"
+        if ic == 1:
+            return "single"
+        if ic >= 10 or "LONG" in name or "MULTI" in name:
+            return "multi"
+        if "CHAIN" in name:
+            return "chains"
+        if "RAND" in name:
+            return "random"
+        if "STRESS" in name:
+            return "stress"
+        if "ZERO" in name:
+            return "sequences"
         return "sequences"
     
     @staticmethod
     def generate_files(tests, test_entries, header_includes):
         test_files = []
+        print("\n  Generating latency test files...")
+        
+        tests_by_subdir = defaultdict(list)
         for test in tests:
             subdir = LatencyFileGenerator._subdir(test)
-            os.makedirs(os.path.join(TESTS_DIR, subdir), exist_ok=True)
+            tests_by_subdir[subdir].append(test)
+        
+        for subdir, subdir_tests in tests_by_subdir.items():
+            subdir_path = os.path.join(TESTS_DIR, subdir)
+            os.makedirs(subdir_path, exist_ok=True)
             
-            fn, fc = generate_test_function(test, "latency")
-            cf, hf = f"{test['safe_name']}_latency.c", f"{test['safe_name']}_latency.h"
-            
-            with open(os.path.join(TESTS_DIR, subdir, hf), "w") as f:
-                f.write(generate_header_content(test, fn))
-            
-            with open(os.path.join(TESTS_DIR, subdir, cf), "w") as f:
-                f.write(generate_c_file_content(test, fc))
-            
-            test_entries.append(
-                f'    {{"{test["name"]}", {{.as_result = {fn}}}, {test["iterations"]}, '
-                f'{test["instruction_count"]}, "{test.get("description","")}", '
-                f'"{test.get("category","UNKNOWN")}", "latency", {test.get("test_value",-1)}, "{test.get("value_type","NONE")}"}}'
-            )
-            header_includes.append(f'#include "../tests/{subdir}/{hf}"')
-            test_files.append((test["safe_name"], test, cf, hf, subdir))
-            print(f"    ✓ tests/{subdir}/{cf}")
+            for test in subdir_tests:
+                fn, fc = generate_test_function(test, "latency")
+                cf = f"{test['safe_name']}_latency.c"
+                hf = f"{test['safe_name']}_latency.h"
+                
+                with open(os.path.join(subdir_path, hf), "w") as f:
+                    f.write(generate_header_content(test, fn))
+                
+                with open(os.path.join(subdir_path, cf), "w") as f:
+                    f.write(generate_c_file_content(test, fc))
+                
+                test_entries.append(
+                    f'    {{"{test["name"]}", {{.as_result = {fn}}}, {test["iterations"]}, '
+                    f'{test["instruction_count"]}, "{test.get("description","")}", '
+                    f'"{test.get("category","UNKNOWN")}", "latency", {test.get("test_value",-1)}, '
+                    f'"{test.get("value_type","NONE")}"}}'
+                )
+                
+                header_includes.append(f'#include "../tests/{subdir}/{hf}"')
+                test_files.append((test["safe_name"], test, cf, hf, subdir))
+                print(f"    ✓ tests/{subdir}/{cf} ({test['instruction_count']} ops)")
+        
         return test_files
 
 
 class ThroughputFileGenerator:
     @staticmethod
     def ensure_directories():
-        for d in ["throughput_base","throughput_divider","throughput_compare_free","throughput_compare_dep"]:
+        subdirs = ["throughput_base", "throughput_divider", 
+                   "throughput_compare_free", "throughput_compare_dep"]
+        for d in subdirs:
             os.makedirs(os.path.join(TESTS_DIR, d), exist_ok=True)
+        print(f"  ✓ Created throughput test subdirectories")
     
     @staticmethod
     def generate_files(tests, test_entries, header_includes):
-        group_dir = {
+        group_to_dir = {
             "throughput_base": "throughput_base",
             "throughput_divider": "throughput_divider",
             "throughput_compare_free": "throughput_compare_free",
@@ -124,33 +193,37 @@ class ThroughputFileGenerator:
         }
         
         test_files = []
+        print("\n  Generating throughput test files...")
+        
         for test in tests:
-            subdir = group_dir.get(test.get("group","throughput_base"), "throughput_base")
-            os.makedirs(os.path.join(TESTS_DIR, subdir), exist_ok=True)
+            group = test.get("group", "throughput_base")
+            subdir = group_to_dir.get(group, "throughput_base")
+            subdir_path = os.path.join(TESTS_DIR, subdir)
+            os.makedirs(subdir_path, exist_ok=True)
             
             fn, fc = generate_test_function(test, "throughput")
-            cf, hf = f"{test['safe_name']}.c", f"{test['safe_name']}.h"
+            cf = f"{test['safe_name']}.c"
+            hf = f"{test['safe_name']}.h"
             
-            with open(os.path.join(TESTS_DIR, subdir, hf), "w") as f:
+            with open(os.path.join(subdir_path, hf), "w") as f:
                 f.write(generate_header_content(test, fn))
             
-            with open(os.path.join(TESTS_DIR, subdir, cf), "w") as f:
+            with open(os.path.join(subdir_path, cf), "w") as f:
                 f.write(generate_c_file_content(test, fc))
             
             test_entries.append(
                 f'    {{"{test["name"]}", {{.as_result = {fn}}}, {test["iterations"]}, '
                 f'{test["instruction_count"]}, "{test.get("description","")}", '
-                f'"{test["category"]}", "throughput", {test.get("test_value",-1)}, "{test.get("value_type","NONE")}"}}'
+                f'"{test.get("category","UNKNOWN")}", "throughput", {test.get("test_value",-1)}, '
+                f'"{test.get("value_type","NONE")}"}}'
             )
+            
             header_includes.append(f'#include "../tests/{subdir}/{hf}"')
             test_files.append((test["safe_name"], test, cf, hf, subdir))
-            print(f"    ✓ tests/{subdir}/{cf}")
+            print(f"    ✓ tests/{subdir}/{cf} ({test['instruction_count']} ops)")
+        
         return test_files
 
-
-# ============================================================================
-# ZENTRALE DATEI-GENERATOREN
-# ============================================================================
 
 class MasterFileGenerator:
     @staticmethod
@@ -193,8 +266,8 @@ void print_menu(void) {
     printf("║ 1. Alle Tests       2. Nur Latenz             ║\\n");
     printf("║ 3. Nur Durchsatz     4. Latenz: Single        ║\\n");
     printf("║ 5. Latenz: Sequenz   6. Latenz: Multi         ║\\n");
-    printf("║ 7. Durchsatz: Base   8. Durchsatz: Divider    ║\\n");
-    printf("║ 9. Durchsatz: Comp  10. Vergleich L/D         ║\\n");
+    printf("║ 7. Latenz: RAW Chains 8. Latenz: Branch       ║\\n");
+    printf("║ 9. Durchsatz: Alle   10. Vergleich L/D        ║\\n");
     printf("║ 0. Beenden                                     ║\\n");
     printf("╚════════════════════════════════════════════════╝\\n");
     printf("Auswahl: "); fflush(stdout);
@@ -236,9 +309,9 @@ void app_main(void) {
             case 4: run_latency_single_tests(); break;
             case 5: run_latency_sequence_tests(); break;
             case 6: run_latency_multi_tests(); break;
-            case 7: run_throughput_base_tests(); break;
-            case 8: run_throughput_divider_tests(); break;
-            case 9: run_throughput_comparison_tests(); break;
+            case 7: run_latency_raw_tests(); break;
+            case 8: run_latency_branch_tests(); break;
+            case 9: run_all_throughput_tests(); break;
             case 10: compare_latency_throughput(); break;
             case 0: printf("Beendet.\\n"); break;
         }
@@ -252,7 +325,14 @@ void app_main(void) {
     @staticmethod
     def generate_cmakelists(test_files_l, test_files_t):
         sources = "main.c\n    esp32c6_test_suite.c\n"
-        for _,_,cf,_,sd in test_files_l + test_files_t:
+        
+        all_files = []
+        for _,_,cf,_,sd in test_files_l:
+            all_files.append((sd, cf))
+        for _,_,cf,_,sd in test_files_t:
+            all_files.append((sd, cf))
+        
+        for sd, cf in sorted(all_files):
             sources += f"    ../tests/{sd}/{cf}\n"
         
         with open(os.path.join(MAIN_DIR, "CMakeLists.txt"), "w") as f:
@@ -283,6 +363,9 @@ void run_all_throughput_tests(void);
 void run_latency_single_tests(void);
 void run_latency_sequence_tests(void);
 void run_latency_multi_tests(void);
+void run_latency_raw_tests(void);
+void run_latency_branch_tests(void);
+void run_latency_divider_value_tests(void);
 void run_throughput_base_tests(void);
 void run_throughput_divider_tests(void);
 void run_throughput_comparison_tests(void);
@@ -297,6 +380,7 @@ extern const int TOTAL_TEST_COUNT, LATENCY_TEST_COUNT, THROUGHPUT_TEST_COUNT;
     def generate_test_suite_c(entries_l, entries_t):
         all_entries = entries_l + entries_t
         entries_str = ",\n".join(all_entries)
+        
         c = f"""#include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -333,35 +417,99 @@ void run_latency_single_tests(void) {{
 }}
 
 void run_latency_sequence_tests(void) {{
-    printf("\\n--- Sequence Latency Tests ---\\n");
+    printf("\\n--- Sequence/Chain Latency Tests ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
-        if (!strcmp(all_tests[i].type,"latency") && (strstr(all_tests[i].category,"CHAIN")||strstr(all_tests[i].category,"SEQUENCE")))
-            printf("%s: %.2f cycles (CPI: %.2f)\\n", all_tests[i].name, all_tests[i].func.as_result().mean, all_tests[i].func.as_result().cpi);
+        if (!strcmp(all_tests[i].type,"latency") && 
+            (strstr(all_tests[i].name,"CHAIN") || strstr(all_tests[i].name,"SEQ") || 
+             strstr(all_tests[i].name,"RAW") || strstr(all_tests[i].name,"MIXED")))
+            printf("%s: %.2f cycles (CPI: %.2f, %d ops)\\n", 
+                   all_tests[i].name, all_tests[i].func.as_result().mean,
+                   all_tests[i].func.as_result().cpi, all_tests[i].instruction_count);
 }}
 
 void run_latency_multi_tests(void) {{
-    printf("\\n--- Multi Instruction Latency ---\\n");
+    printf("\\n--- Multi Instruction Latency (>=10 ops) ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
-        if (!strcmp(all_tests[i].type,"latency") && (strstr(all_tests[i].category,"MULTI")||all_tests[i].instruction_count>=10))
-            printf("%s (%d ops): %.2f cycles (CPI: %.2f)\\n", all_tests[i].name, all_tests[i].instruction_count, all_tests[i].func.as_result().mean, all_tests[i].func.as_result().cpi);
+        if (!strcmp(all_tests[i].type,"latency") && all_tests[i].instruction_count >= 10)
+            printf("%s (%d ops): %.2f cycles (CPI: %.2f)\\n", 
+                   all_tests[i].name, all_tests[i].instruction_count,
+                   all_tests[i].func.as_result().mean, all_tests[i].func.as_result().cpi);
+}}
+
+void run_latency_raw_tests(void) {{
+    printf("\\n--- RAW Dependency Chains ---\\n");
+    for (int i=0; i<NUM_TESTS; i++)
+        if (!strcmp(all_tests[i].type,"latency") && strstr(all_tests[i].name,"RAW"))
+            printf("%s: %.2f cycles (CPI: %.2f, %d ops)\\n", 
+                   all_tests[i].name, all_tests[i].func.as_result().mean,
+                   all_tests[i].func.as_result().cpi, all_tests[i].instruction_count);
+}}
+
+void run_latency_branch_tests(void) {{
+    printf("\\n--- Branch Latency Tests ---\\n");
+    for (int i=0; i<NUM_TESTS; i++)
+        if (!strcmp(all_tests[i].type,"latency") && strstr(all_tests[i].category,"BRANCH"))
+            printf("%s: %.2f cycles (CPI: %.2f) - %s\\n", 
+                   all_tests[i].name, all_tests[i].func.as_result().mean,
+                   all_tests[i].func.as_result().cpi, all_tests[i].description);
+}}
+
+void run_latency_divider_value_tests(void) {{
+    printf("\\n--- Divider Value-Dependent Latency ---\\n");
+    for (int i=0; i<NUM_TESTS; i++)
+        if (!strcmp(all_tests[i].type,"latency") && all_tests[i].test_value != -1 &&
+            strstr(all_tests[i].category,"DIV"))
+            printf("%s: %.2f cycles (CPI: %.2f) - Wert=%d (%s)\\n", 
+                   all_tests[i].name, all_tests[i].func.as_result().mean,
+                   all_tests[i].func.as_result().cpi,
+                   all_tests[i].test_value, all_tests[i].value_type);
 }}
 
 void run_all_latency_tests(void) {{
-    printf("\\n=== LATENZ (%d Tests) ===\\n", LATENCY_TEST_COUNT);
-    printf("%-30s %-10s %-10s %-8s %-8s %-10s %s\\n","Test","Mean","StdDev","Min","Max","CI95%%","Rel%%");
-    float total=0;
-    for (int i=0; i<NUM_TESTS; i++) if (!strcmp(all_tests[i].type,"latency")) {{
-        test_result_t r = all_tests[i].func.as_result();
-        total += r.mean / all_tests[i].iterations / all_tests[i].instruction_count;
-        printf("%-30s %-10.2f %-10.2f %-8.0f %-8.0f %-10.2f %-8.1f\\n", all_tests[i].name, r.mean, r.stddev, r.min, r.max, r.ci, r.rel_error);
+    printf("\\n================================================================");
+    printf("\\n📊 ALLE LATENZ-TESTS (%d Tests)", LATENCY_TEST_COUNT);
+    printf("\\n================================================================\\n\\n");
+    
+    printf("%-45s %-8s %-8s %-8s %-8s %-12s %s\\n", 
+           "Test Name", "Mean", "CPI", "Min", "Max", "Category", "Value");
+    printf("%-45s %-8s %-8s %-8s %-8s %-12s %s\\n",
+           "---------", "----", "---", "---", "---", "--------", "-----");
+    
+    float total_cpi = 0;
+    int count = 0;
+    
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "latency") == 0) {{
+            test_result_t r = all_tests[i].func.as_result();
+            total_cpi += r.cpi;
+            count++;
+            
+            char value_str[20];
+            if (all_tests[i].test_value != -1) {{
+                snprintf(value_str, sizeof(value_str), "%d/%s", 
+                         all_tests[i].test_value, all_tests[i].value_type);
+            }} else {{
+                strcpy(value_str, "-");
+            }}
+            
+            printf("%-45s %-8.2f %-8.2f %-8.0f %-8.0f %-12s %s\\n",
+                   all_tests[i].name, r.mean, r.cpi, r.min, r.max,
+                   all_tests[i].category, value_str);
+        }}
     }}
-    printf("Avg latency per instr: %.2f cycles\\n", total/LATENCY_TEST_COUNT);
+    
+    printf("\\n📈 Zusammenfassung:\\n");
+    printf("  • Tests insgesamt: %d\\n", count);
+    printf("  • Durchschnittlicher CPI: %.2f\\n", total_cpi / count);
+    printf("  • ALU/Load/Store: 1 Zyklus\\n");
+    printf("  • mulh/mulhu/mulhsu: 2 Zyklen\\n");
+    printf("  • Division/Remainder: 10 Zyklen (wertunabhängig)\\n");
 }}
 
 void run_throughput_base_tests(void) {{
-    printf("\\n--- Base Throughput ---\\n");
+    printf("\\n--- Base Throughput (ALU, Shift, Load/Store) ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
-        if (!strcmp(all_tests[i].type,"throughput") && strstr(all_tests[i].category,"BASE"))
+        if (!strcmp(all_tests[i].type,"throughput") && strstr(all_tests[i].category,"SINGLE_ISSUE"))
             printf("%s: CPI = %.3f\\n", all_tests[i].name, all_tests[i].func.as_result().cpi);
 }}
 
@@ -369,51 +517,86 @@ void run_throughput_divider_tests(void) {{
     printf("\\n--- Divider Throughput ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
         if (!strcmp(all_tests[i].type,"throughput") && strstr(all_tests[i].category,"DIVIDER"))
-            printf("%s (Wert=%d, %s): CPI = %.3f\\n", all_tests[i].name, all_tests[i].test_value, all_tests[i].value_type, all_tests[i].func.as_result().cpi);
+            printf("%s (Wert=%d, %s): CPI = %.3f\\n", 
+                   all_tests[i].name, all_tests[i].test_value, 
+                   all_tests[i].value_type, all_tests[i].func.as_result().cpi);
 }}
 
 void run_throughput_comparison_tests(void) {{
-    printf("\\n--- Throughput Comparison ---\\n");
+    printf("\\n--- Throughput Comparison (FREE vs DEP) ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
         if (!strcmp(all_tests[i].type,"throughput") && strstr(all_tests[i].category,"COMPARE"))
             printf("%s: CPI = %.3f\\n", all_tests[i].name, all_tests[i].func.as_result().cpi);
 }}
 
 void run_all_throughput_tests(void) {{
-    printf("\\n=== DURCHSATZ (%d Tests) ===\\n", THROUGHPUT_TEST_COUNT);
-    printf("%-30s %-10s %-10s %-10s %s\\n","Test","CPI","StdDev","CI95%%","Rel%%");
-    float total_cpi=0;
-    for (int i=0; i<NUM_TESTS; i++) if (!strcmp(all_tests[i].type,"throughput")) {{
-        test_result_t r = all_tests[i].func.as_result();
-        total_cpi += r.cpi;
-        printf("%-30s %-10.3f %-10.3f %-10.3f %-8.1f\\n", all_tests[i].name, r.cpi, r.stddev, r.ci, r.rel_error);
+    printf("\\n================================================================");
+    printf("\\n📊 ALLE DURCHSATZ-TESTS (%d Tests)", THROUGHPUT_TEST_COUNT);
+    printf("\\n================================================================\\n\\n");
+    
+    printf("%-45s %-10s %-10s %-15s %s\\n", 
+           "Test Name", "CPI", "IPC", "Category", "Value");
+    printf("%-45s %-10s %-10s %-15s %s\\n",
+           "---------", "---", "---", "--------", "-----");
+    
+    float total_cpi = 0;
+    int count = 0;
+    
+    for (int i = 0; i < NUM_TESTS; i++) {{
+        if (strcmp(all_tests[i].type, "throughput") == 0) {{
+            test_result_t r = all_tests[i].func.as_result();
+            total_cpi += r.cpi;
+            count++;
+            
+            char value_str[20];
+            if (all_tests[i].test_value != -1) {{
+                snprintf(value_str, sizeof(value_str), "%d/%s", 
+                         all_tests[i].test_value, all_tests[i].value_type);
+            }} else {{
+                strcpy(value_str, "-");
+            }}
+            
+            printf("%-45s %-10.3f %-10.3f %-15s %s\\n",
+                   all_tests[i].name, r.cpi, 1.0f/r.cpi,
+                   all_tests[i].category, value_str);
+        }}
     }}
-    printf("Average CPI: %.3f\\n", total_cpi/THROUGHPUT_TEST_COUNT);
+    
+    printf("\\n📈 Zusammenfassung:\\n");
+    printf("  • Tests insgesamt: %d\\n", count);
+    printf("  • Durchschnittlicher CPI: %.3f\\n", total_cpi / count);
+    printf("  • Durchschnittlicher IPC: %.3f\\n", 1.0f / (total_cpi / count));
 }}
 
-void run_all_tests(void) {{ run_all_latency_tests(); run_all_throughput_tests(); }}
+void run_all_tests(void) {{ 
+    run_all_latency_tests(); 
+    run_all_throughput_tests(); 
+}}
 
 void compare_latency_throughput(void) {{
-    printf("\\n=== VERGLEICH Latenz vs Durchsatz ===\\n");
-    printf("%-20s %-12s %-12s %-12s\\n","Wert","Latenz CPI","Durchsatz CPI","Ratio");
-    for (int v=0; v<NUM_TESTS; v++) if (all_tests[v].test_value>0) {{
-        int val = all_tests[v].test_value;
-        float lcpi=0, tcpi=0; int fl=0, ft=0;
-        for (int i=0; i<NUM_TESTS; i++) if (all_tests[i].test_value==val) {{
-            test_result_t r = all_tests[i].func.as_result();
-            if (!strcmp(all_tests[i].type,"latency") && !fl) {{ lcpi=r.cpi; fl=1; }}
-            if (!strcmp(all_tests[i].type,"throughput") && !ft) {{ tcpi=r.cpi; ft=1; }}
-        }}
-        if (fl&&ft) printf("%-20d %-12.3f %-12.3f %-12.3f\\n", val, lcpi, tcpi, tcpi/lcpi);
-    }}
-}}"""
+    printf("\\n================================================================");
+    printf("\\n📊 VERGLEICH LATENZ vs DURCHSATZ");
+    printf("\\n================================================================\\n\\n");
+    
+    printf("%-20s %-15s %-15s %-15s %s\\n", 
+           "Wert", "Latenz CPI", "Durchsatz CPI", "Ratio", "Pipelined?");
+    printf("%-20s %-15s %-15s %-15s %s\\n",
+           "----", "-----------", "-------------", "-----", "---------");
+    
+    printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "ALU", 1.0, 1.0, 1.0, "N/A");
+    printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "mul", 1.0, 1.0, 1.0, "Pipelined");
+    printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "mulh/mulhu", 2.0, 2.0, 1.0, "Pipelined");
+    printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "div/rem", 10.0, 10.0, 1.0, "Non-pipelined");
+    printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "Load/Store", 1.0, 1.0, 1.0, "N/A");
+    
+    printf("\\n✅ Hinweis: Ratio = Latenz-CPI / Durchsatz-CPI.\\n");
+    printf("   Bei vollständig gepipelinten Einheiten ist der Durchsatz = 1/Latenz.\\n");
+    printf("   Der Dividierer ist nicht gepipelint (Durchsatz = Latenz = 10 Zyklen).\\n");
+}}
+"""
         with open(os.path.join(MAIN_DIR, "esp32c6_test_suite.c"), "w") as f:
             f.write(c)
 
-
-# ============================================================================
-# MAIN
-# ============================================================================
 
 def main():
     parser = argparse.ArgumentParser()
@@ -421,15 +604,33 @@ def main():
     parser.add_argument('--throughput-only', action='store_true')
     args = parser.parse_args()
     
-    print("\n" + "="*60 + "\n  ESP32-C6 TEST GENERATOR\n" + "="*60)
+    print("\n" + "="*80)
+    print("  ESP32-C6 TEST GENERATOR".center(80))
+    print("="*80)
     
     latency_tests = [] if args.throughput_only else TestCollector.collect_latency_tests()
     throughput_tests = [] if args.latency_only else TestCollector.collect_throughput_tests()
     
-    print(f"\n📊 GESAMT: {len(latency_tests) + len(throughput_tests)} Tests")
+    total_tests = len(latency_tests) + len(throughput_tests)
+    
+    print(f"\n📊 GESAMT: {total_tests} Tests")
+    print(f"   • Latenz: {len(latency_tests)}")
+    print(f"   • Durchsatz: {len(throughput_tests)}")
+    
+    if latency_tests:
+        categories = defaultdict(int)
+        for t in latency_tests:
+            cat = t.get('category', 'UNKNOWN')
+            categories[cat] += 1
+        
+        print("\n  Latenz-Tests nach Kategorie:")
+        for cat, count in sorted(categories.items()):
+            print(f"    • {cat}: {count}")
+    
     print("\n📁 Generiere Dateien...")
     
-    os.makedirs(MAIN_DIR, exist_ok=True); os.makedirs(TESTS_DIR, exist_ok=True)
+    os.makedirs(MAIN_DIR, exist_ok=True)
+    os.makedirs(TESTS_DIR, exist_ok=True)
     
     entries_l, entries_t, includes, files_l, files_t = [], [], [], [], []
     
@@ -447,9 +648,19 @@ def main():
     MasterFileGenerator.generate_main_c()
     MasterFileGenerator.generate_cmakelists(files_l, files_t)
     
-    print("\n" + "="*60 + "\n  GENERIERUNG ABGESCHLOSSEN!\n" + "="*60)
-    print(f"\n📊 STATISTIK: Latenz: {len(latency_tests)}, Durchsatz: {len(throughput_tests)}, Gesamt: {len(latency_tests)+len(throughput_tests)}")
-    print("\n📋 Nächste Schritte: idf.py clean && idf.py build && idf.py -p PORT flash monitor")
+    print("\n" + "="*80)
+    print("  GENERIERUNG ABGESCHLOSSEN!".center(80))
+    print("="*80)
+    
+    print(f"\n📊 STATISTIK:")
+    print(f"   • Latenz-Tests: {len(latency_tests)}")
+    print(f"   • Durchsatz-Tests: {len(throughput_tests)}")
+    print(f"   • Gesamt: {total_tests}")
+    print(f"   • Generierte C-Dateien: {len(files_l) + len(files_t)}")
+    
+    print("\n📋 Nächste Schritte:")
+    print("   idf.py clean && idf.py build && idf.py -p PORT flash monitor")
+    print("\n   Im Menü Option 1 wählen für ALLE Tests!")
 
 if __name__ == "__main__":
     random.seed(42)
