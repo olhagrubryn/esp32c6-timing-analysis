@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
-# scripts/generate_all_tests.py - FINALE VERSION
+# scripts/generate_all_tests.py - FINALE VERSION (OHNE ITERATIONS)
 
 import os, sys, random, argparse
 from collections import defaultdict
+import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from base.config import MAIN_DIR, TESTS_DIR
+from base.config import MAIN_DIR, TESTS_DIR, PROJECT_ROOT
 from base.code_generator import generate_test_function, generate_header_content, generate_c_file_content
-from generators.latency_generator import *
+from generators.latency_generator import (
+    Class1_ALU_Generator,
+    Class2_Shift_Generator,
+    Class3_Mul_Generator,
+    Class4_Div_Generator,
+    Class5_Load_Generator,
+    Class6_Store_Generator,
+    Class7_Immediate_Generator,
+    Class9_Mixed_Per_Class_Generator
+)
 from generators.throughput_generator import *
 from generators.comparison_generator import ComparisonTestGenerator
 from generators.branch_generator import BranchTestGenerator
 
-from generators.latency_generator import (
-    SingleInstructionTestGenerator,
-    LatencyRAWChainGenerator,
-    ZeroIdiomTestGenerator,
-    MixedClassTestGenerator,
-    ShiftRegisterTestGenerator,
-    MultiInstructionTestGenerator,
-    MultiSequenceTestGenerator,
-    DividerLatencyGenerator
-)
 
 class TestCollector:
     @staticmethod
@@ -30,17 +30,14 @@ class TestCollector:
         print("\n  [Latency] Collecting tests...")
         
         generators = [
-            ("Single instruction", SingleInstructionTestGenerator.generate_all),
-            ("RAW chains", LatencyRAWChainGenerator.generate_class_tests),
-            ("Zero idioms", ZeroIdiomTestGenerator.generate_all),
-            ("Mixed class", MixedClassTestGenerator.generate_all),
-            ("Register shift (controlled)", ShiftRegisterTestGenerator.generate_all),
-            ("Multi instruction", MultiInstructionTestGenerator.generate_all),
-            ("Long sequences", MultiSequenceTestGenerator.generate_multi_sequence_tests),
-            ("Comparison", lambda: ComparisonTestGenerator.generate_latency_for_divider_values() + 
-                                   ComparisonTestGenerator.generate_latency_for_throughput_comparison()),
-            ("Divider latency", DividerLatencyGenerator.generate_all),
-            #("Branch tests", BranchTestGenerator.generate_all)
+            ("Klasse 1: ALU", Class1_ALU_Generator.generate_all),
+            ("Klasse 2: Shift", Class2_Shift_Generator.generate_all),
+            ("Klasse 3: Mul", Class3_Mul_Generator.generate_all),
+            ("Klasse 4: Div", Class4_Div_Generator.generate_all),
+            ("Klasse 5: Load", Class5_Load_Generator.generate_all),
+            ("Klasse 6: Store", Class6_Store_Generator.generate_all),
+            ("Klasse 7: Immediate", Class7_Immediate_Generator.generate_all),
+            ("Klasse 9: Mixed per Class", Class9_Mixed_Per_Class_Generator.generate_all),
         ]
         
         for name, gen in generators:
@@ -100,8 +97,7 @@ class TestCollector:
 class LatencyFileGenerator:
     @staticmethod
     def ensure_directories():
-        subdirs = ["single", "chains", "sequences", "random", "stress", 
-                   "memory", "multi", "raw_chains", "mixed", "branch"]
+        subdirs = ["single", "memory", "raw_chains", "branch", "sequences"]
         for d in subdirs:
             os.makedirs(os.path.join(TESTS_DIR, d), exist_ok=True)
         print(f"  ✓ Created latency test subdirectories")
@@ -119,18 +115,8 @@ class LatencyFileGenerator:
             return "memory"
         if "RAW" in name or group == "raw_chains":
             return "raw_chains"
-        if "MIXED" in name or group == "mixed":
-            return "mixed"
-        if ic == 1:
+        if ic == 1 or "SINGLE" in name:
             return "single"
-        if ic >= 10 or "LONG" in name or "MULTI" in name:
-            return "multi"
-        if "CHAIN" in name:
-            return "chains"
-        if "RAND" in name:
-            return "random"
-        if "STRESS" in name:
-            return "stress"
         if "ZERO" in name:
             return "sequences"
         return "sequences"
@@ -160,8 +146,9 @@ class LatencyFileGenerator:
                 with open(os.path.join(subdir_path, cf), "w") as f:
                     f.write(generate_c_file_content(test, fc))
                 
+                # OHNE iterations - die Struktur wird in generate_test_suite_c angepasst
                 test_entries.append(
-                    f'    {{"{test["name"]}", {{.as_result = {fn}}}, {test["iterations"]}, '
+                    f'    {{"{test["name"]}", {{.as_result = {fn}}}, '
                     f'{test["instruction_count"]}, "{test.get("description","")}", '
                     f'"{test.get("category","UNKNOWN")}", "latency", {test.get("test_value",-1)}, '
                     f'"{test.get("value_type","NONE")}"}}'
@@ -211,8 +198,9 @@ class ThroughputFileGenerator:
             with open(os.path.join(subdir_path, cf), "w") as f:
                 f.write(generate_c_file_content(test, fc))
             
+            # OHNE iterations - die Struktur wird in generate_test_suite_c angepasst
             test_entries.append(
-                f'    {{"{test["name"]}", {{.as_result = {fn}}}, {test["iterations"]}, '
+                f'    {{"{test["name"]}", {{.as_result = {fn}}}, '
                 f'{test["instruction_count"]}, "{test.get("description","")}", '
                 f'"{test.get("category","UNKNOWN")}", "throughput", {test.get("test_value",-1)}, '
                 f'"{test.get("value_type","NONE")}"}}'
@@ -238,12 +226,6 @@ typedef struct {
     float mean, stddev, min, max, ci, cpi, rel_error;
 } test_result_t;
 
-static inline int calculate_optimal_iterations(float stddev, float mean, float desired_error_percent) {
-    if (mean == 0) return 1000;
-    float z = 1.96, E = desired_error_percent / 100.0, rel_stddev = stddev / mean;
-    int n = (int)((z * rel_stddev / E) * (z * rel_stddev / E)) + 1;
-    return n < 3 ? 3 : (n > 10000 ? 10000 : n);
-}
 #endif"""
         with open(os.path.join(MAIN_DIR, "test_result.h"), "w") as f:
             f.write(content)
@@ -394,10 +376,16 @@ const int LATENCY_TEST_COUNT = {len(entries_l)};
 const int THROUGHPUT_TEST_COUNT = {len(entries_t)};
 const int TOTAL_TEST_COUNT = {len(all_entries)};
 
+// Struktur OHNE iterations-Feld
 typedef struct {{
-    const char* name; test_func_t func; int iterations; int instruction_count;
-    const char* description; const char* category; const char* type;
-    int test_value; const char* value_type;
+    const char* name; 
+    test_func_t func; 
+    int instruction_count;
+    const char* description; 
+    const char* category; 
+    const char* type;
+    int test_value; 
+    const char* value_type;
 }} test_entry_t;
 
 static const test_entry_t all_tests[] = {{
@@ -501,9 +489,6 @@ void run_all_latency_tests(void) {{
     printf("\\n📈 Zusammenfassung:\\n");
     printf("  • Tests insgesamt: %d\\n", count);
     printf("  • Durchschnittlicher CPI: %.2f\\n", total_cpi / count);
-    printf("  • ALU/Load/Store: 1 Zyklus\\n");
-    printf("  • mulh/mulhu/mulhsu: 2 Zyklen\\n");
-    printf("  • Division/Remainder: 10 Zyklen (wertunabhängig)\\n");
 }}
 
 void run_throughput_base_tests(void) {{
