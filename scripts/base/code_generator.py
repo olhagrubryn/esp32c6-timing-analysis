@@ -76,9 +76,7 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
         [20] = 0x55555555, [21] = 0x66666666, [22] = 0x77777777, [23] = 0x88888888,
         [24] = 0x99999999, [25] = 0xAAAAAAAA, [26] = 0xBBBBBBBB, [27] = 0xCCCCCCCC,
         [28] = 0xDDDDDDDD, [29] = 0xEEEEEEEE, [30] = 0xFFFFFFFF, [31] = 0x87654321,
-    };
-    
-    uint32_t * const base_ptr = safe_buffer;"""
+    };"""
     
     reg_init_code = [
         '    uint32_t safe_buffer_addr = (uint32_t)safe_buffer;',
@@ -151,7 +149,6 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
     
-    uint32_t measurements[2];
     {buffer_decl}
     
 {reg_init_str}
@@ -184,7 +181,6 @@ test_result_t {func_name}(void) {{
         
         if (iter > 0) {{
             cycles = t_end - t_start - 1;
-            measurements[0] = cycles;
             total_cycles = cycles;
             result.min = cycles;
             result.max = cycles;
@@ -201,7 +197,6 @@ test_result_t {func_name}(void) {{
 }}
 """
     return func_name, func_template
-
 
 def generate_throughput_loadstore_function(func_name: str, test: dict, instruction_block: str, test_value, value_type) -> Tuple[str, str]:
     """Throughput Load/Store Tests."""
@@ -268,7 +263,7 @@ def generate_throughput_loadstore_function(func_name: str, test: dict, instructi
 
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
-    uint32_t measurements[2];
+
     {buffer}
     
 {chr(10).join(reg_init)}
@@ -369,7 +364,6 @@ def generate_latency_test_function(func_name: str, test: dict, instruction_block
 
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
-    uint32_t measurements[2];
     
 {chr(10).join(reg_init)}
 {warmup}
@@ -454,7 +448,6 @@ def generate_throughput_test_function(func_name: str, test: dict, instruction_bl
 
 test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
-    uint32_t measurements[2];
     {reg_init_str}
 {warmup}
     
