@@ -569,7 +569,7 @@ class Class7_Immediate_Generator:
 class Class9_Mixed_Per_Class_Generator:
     """
     Klasse 9: Mixed Operation Tests pro Klasse
-    WENIGER VARIANTEN, LÄNGERE KETTEN
+    ERWEITERT: Mehr Tests, längere RAW-Ketten
     """
     
     @staticmethod
@@ -577,33 +577,81 @@ class Class9_Mixed_Per_Class_Generator:
         tests = []
         all_insn = RISCVInstructions.get_all_instructions()
         
-        print("\n      → Klasse 9: Mixed Operations (Lange Ketten)...")
+        print("\n      → Klasse 9: Mixed Operations (ERWEITERT - Mehr Tests, Längere Ketten)...")
         
-        # ===== 1. ALU Mixed - LANGE KETTEN =====
-        alu_ops = ["add", "xor", "or", "and", "sub"]
-        for length in [8, 12, 16]:  # Längere Ketten
-            ops = [alu_ops[i % len(alu_ops)] for i in range(length)]
-            chain = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
-                ops, all_insn, "CLASS1_ALU", length, "mixed"
+        # ===== 1. ALU Mixed - SEHR LANGE KETTEN =====
+        alu_ops = ["add", "sub", "xor", "or", "and", "slt", "sltu"]
+        
+        # Verschiedene Längen - BIS ZU 30 INSTRUKTIONEN
+        for length in [8, 12, 16, 20, 24, 30]:
+            # Zyklische Mischung
+            ops_cycle = [alu_ops[i % len(alu_ops)] for i in range(length)]
+            chain_cycle = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                ops_cycle, all_insn, "CLASS1_ALU", length, "mixed"
             )
-            if chain:
+            if chain_cycle:
                 tests.append({
-                    "name": f"CLASS9_ALU_MIXED_L{length}",
-                    "safe_name": f"CLASS9_ALU_MIXED_L{length}",
-                    "instructions": chain,
+                    "name": f"CLASS9_ALU_CYC_{length}",
+                    "safe_name": f"CLASS9_ALU_CYC_{length}",
+                    "instructions": chain_cycle,
                     "category": "CLASS9_MIXED_ALU",
                     "instruction_count": length,
-                    "description": f"Mixed ALU RAW length {length}",
+                    "description": f"ALU mixed cyclic {length} ops",
                     "test_group": "mixed_per_class",
                     "type": "latency",
                     "test_value": -1,
                     "value_type": "NONE"
                 })
+            
+            # Zufällige Mischung (nur für Längen <= 20)
+            if length <= 20:
+                ops_rand = [random.choice(alu_ops) for _ in range(length)]
+                chain_rand = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                    ops_rand, all_insn, "CLASS1_ALU", length, "mixed"
+                )
+                if chain_rand:
+                    tests.append({
+                        "name": f"CLASS9_ALU_RAND_{length}",
+                        "safe_name": f"CLASS9_ALU_RAND_{length}",
+                        "instructions": chain_rand,
+                        "category": "CLASS9_MIXED_ALU",
+                        "instruction_count": length,
+                        "description": f"ALU mixed random {length} ops",
+                        "test_group": "mixed_per_class",
+                        "type": "latency",
+                        "test_value": -1,
+                        "value_type": "NONE"
+                    })
+            
+            # Aufsteigende Mischung (add, sub, xor, or, and, slt, sltu wiederholend)
+            if length <= 24:
+                ops_asc = []
+                for i in range(length):
+                    ops_asc.append(alu_ops[i % 7])
+                chain_asc = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                    ops_asc, all_insn, "CLASS1_ALU", length, "mixed"
+                )
+                if chain_asc:
+                    tests.append({
+                        "name": f"CLASS9_ALU_ASC_{length}",
+                        "safe_name": f"CLASS9_ALU_ASC_{length}",
+                        "instructions": chain_asc,
+                        "category": "CLASS9_MIXED_ALU",
+                        "instruction_count": length,
+                        "description": f"ALU mixed ascending {length} ops",
+                        "test_group": "mixed_per_class",
+                        "type": "latency",
+                        "test_value": -1,
+                        "value_type": "NONE"
+                    })
         
-        # ===== 2. Shift Mixed - LANGE KETTEN =====
+        # ===== 2. Shift Mixed - ALLE SHIFT-BETRÄGE, LANGE KETTEN =====
         shift_ops = ["sll", "srl", "sra"]
-        for shamt in [1, 8]:
-            for length in [6, 10]:
+        shift_amounts = [0, 1, 2, 4, 8, 16, 31]  # ALLE Shift-Beträge
+        
+        for shamt in shift_amounts:
+            for length in [6, 8, 10, 12, 15]:  # Längere Ketten
+                # Zyklische Mischung
                 ops = [shift_ops[i % 3] for i in range(length)]
                 chain = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
                     ops, all_insn, "CLASS2_SHIFT", length, "mixed", shamt=shamt
@@ -615,117 +663,272 @@ class Class9_Mixed_Per_Class_Generator:
                         "instructions": chain,
                         "category": "CLASS9_MIXED_SHIFT",
                         "instruction_count": length,
-                        "description": f"Mixed Shift RAW shamt={shamt} len={length}",
+                        "description": f"Shift mixed shamt={shamt} len={length}",
+                        "test_group": "mixed_per_class",
+                        "type": "latency",
+                        "test_value": -1,
+                        "value_type": "NONE"
+                    })
+                
+                # Abwechselnde Mischung (sll, srl, sra, sll, srl, sra, ...)
+                if length <= 12:
+                    ops_alt = []
+                    for i in range(length):
+                        ops_alt.append(shift_ops[i % 3])
+                    chain_alt = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                        ops_alt, all_insn, "CLASS2_SHIFT", length, "mixed", shamt=shamt
+                    )
+                    if chain_alt:
+                        tests.append({
+                            "name": f"CLASS9_SHIFT_ALT_S{shamt}_L{length}",
+                            "safe_name": f"CLASS9_SHIFT_ALT_S{shamt}_L{length}",
+                            "instructions": chain_alt,
+                            "category": "CLASS9_MIXED_SHIFT",
+                            "instruction_count": length,
+                            "description": f"Shift alternating shamt={shamt} len={length}",
+                            "test_group": "mixed_per_class",
+                            "type": "latency",
+                            "test_value": -1,
+                            "value_type": "NONE"
+                        })
+        
+        # ===== 3. Mul Mixed - ALLE MULTIPLIKATIONEN, LANGE KETTEN =====
+        mul_ops = ["mul", "mulh", "mulhu", "mulhsu"]
+        
+        for length in [4, 5, 6, 8, 10, 12]:  # Längere Ketten
+            # Zyklische Mischung
+            ops_cycle = [mul_ops[i % len(mul_ops)] for i in range(length)]
+            chain_cycle = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                ops_cycle, all_insn, "CLASS3_MUL", length, "mixed"
+            )
+            if chain_cycle:
+                tests.append({
+                    "name": f"CLASS9_MUL_CYC_{length}",
+                    "safe_name": f"CLASS9_MUL_CYC_{length}",
+                    "instructions": chain_cycle,
+                    "category": "CLASS9_MIXED_MUL",
+                    "instruction_count": length,
+                    "description": f"Mul mixed cyclic {length} ops",
+                    "test_group": "mixed_per_class",
+                    "type": "latency",
+                    "test_value": -1,
+                    "value_type": "NONE"
+                })
+            
+            # Mul + Mulh abwechselnd
+            if length <= 8:
+                ops_mix = []
+                for i in range(length):
+                    ops_mix.append("mul" if i % 2 == 0 else "mulh")
+                chain_mix = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                    ops_mix, all_insn, "CLASS3_MUL", length, "mixed"
+                )
+                if chain_mix:
+                    tests.append({
+                        "name": f"CLASS9_MUL_MIX_{length}",
+                        "safe_name": f"CLASS9_MUL_MIX_{length}",
+                        "instructions": chain_mix,
+                        "category": "CLASS9_MIXED_MUL",
+                        "instruction_count": length,
+                        "description": f"Mul mixed mul/mulh {length} ops",
                         "test_group": "mixed_per_class",
                         "type": "latency",
                         "test_value": -1,
                         "value_type": "NONE"
                     })
         
-        # ===== 3. Mul Mixed - LANGE KETTEN =====
-        mul_ops = ["mul", "mulh", "mulhu"]
-        for length in [5, 8]:
-            ops = [mul_ops[i % 3] for i in range(length)]
-            chain = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
-                ops, all_insn, "CLASS3_MUL", length, "mixed"
-            )
-            if chain:
+        # ===== 4. Div Mixed - ALLE WERTE, LANGE KETTEN =====
+        div_ops = ["div", "divu", "rem", "remu"]
+        test_values = [
+            (2, "HIGH"), (4, "HIGH"), (8, "HIGH"), (16, "HIGH"),
+            (3, "LOW"), (5, "LOW"), (7, "LOW"), (11, "LOW"), (13, "LOW"),
+            (0, "EDGE"), (1, "EDGE"), (0x7FFFFFFF, "EDGE"), (0xFFFFFFFF, "EDGE")
+        ]
+        
+        for val, vtype in test_values:
+            for length in [4, 5, 6, 8, 10]:  # Längere Ketten
+                # Zyklische Mischung
+                ops_cycle = [div_ops[i % 4] for i in range(length)]
+                chain_cycle = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                    ops_cycle, all_insn, "CLASS4_DIV", length, "mixed", value=val
+                )
+                if chain_cycle:
+                    tests.append({
+                        "name": f"CLASS9_DIV_{vtype}_{val}_CYC_{length}",
+                        "safe_name": f"CLASS9_DIV_{vtype}_{val}_CYC_{length}",
+                        "instructions": chain_cycle,
+                        "category": "CLASS9_MIXED_DIV",
+                        "instruction_count": length,
+                        "description": f"Div mixed {vtype} val={val} len={length}",
+                        "test_group": "mixed_per_class",
+                        "type": "latency",
+                        "test_value": val,
+                        "value_type": vtype
+                    })
+                
+                # Div + Rem abwechselnd
+                if length <= 6:
+                    ops_alt = []
+                    for i in range(length):
+                        ops_alt.append("div" if i % 2 == 0 else "rem")
+                    chain_alt = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                        ops_alt, all_insn, "CLASS4_DIV", length, "mixed", value=val
+                    )
+                    if chain_alt:
+                        tests.append({
+                            "name": f"CLASS9_DIV_{vtype}_{val}_ALT_{length}",
+                            "safe_name": f"CLASS9_DIV_{vtype}_{val}_ALT_{length}",
+                            "instructions": chain_alt,
+                            "category": "CLASS9_MIXED_DIV",
+                            "instruction_count": length,
+                            "description": f"Div mixed div/rem val={val} len={length}",
+                            "test_group": "mixed_per_class",
+                            "type": "latency",
+                            "test_value": val,
+                            "value_type": vtype
+                        })
+        
+        # ===== 5. Load Mixed - ALLE LOADS, LANGE KETTEN =====
+        load_ops = ["lb", "lh", "lw", "lbu", "lhu"]
+        
+        for pattern in ["sequential", "strided", "random", "alternating"]:
+            for length in [6, 8, 10, 12, 15, 20]:  # SEHR LANGE KETTEN
+                chain = []
+                for i in range(length):
+                    op = load_ops[i % len(load_ops)]
+                    
+                    # Destination Register abwechseln
+                    if i % 4 == 0:
+                        dst = RISCVRegisters.A2
+                    elif i % 4 == 1:
+                        dst = RISCVRegisters.A4
+                    elif i % 4 == 2:
+                        dst = RISCVRegisters.A5
+                    else:
+                        dst = RISCVRegisters.A6
+                    
+                    if pattern == "sequential":
+                        offset = (i * 4) % 64
+                    elif pattern == "strided":
+                        offset = (i * 8) % 64
+                    elif pattern == "random":
+                        offset = (i * 13) % 64  # Prime number
+                    else:  # alternating
+                        offset = (i * 4) % 32 if i % 2 == 0 else (i * 4) % 32 + 32
+                    
+                    instr = all_insn[op].format(dst=dst, base=RISCVRegisters.BASE_REG, offset=offset)
+                    chain.append((op, instr))
+                
                 tests.append({
-                    "name": f"CLASS9_MUL_MIXED_L{length}",
-                    "safe_name": f"CLASS9_MUL_MIXED_L{length}",
+                    "name": f"CLASS9_LOAD_{pattern.upper()}_{length}",
+                    "safe_name": f"CLASS9_LOAD_{pattern.upper()}_{length}",
                     "instructions": chain,
-                    "category": "CLASS9_MIXED_MUL",
+                    "category": "CLASS9_MIXED_LOAD",
                     "instruction_count": length,
-                    "description": f"Mixed Mul RAW length {length}",
+                    "description": f"Load {pattern} pattern length {length}",
                     "test_group": "mixed_per_class",
                     "type": "latency",
                     "test_value": -1,
                     "value_type": "NONE"
                 })
         
-        # ===== 4. Div Mixed - REPRÄSENTATIVE WERTE =====
-        div_ops = ["div", "divu", "rem", "remu"]
-        for val, vtype in [(2, "HIGH"), (7, "LOW"), (0, "EDGE")]:
-            for length in [4, 6]:
-                ops = [div_ops[i % 4] for i in range(length)]
-                chain = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
-                    ops, all_insn, "CLASS4_DIV", length, "mixed", value=val
+        # ===== 6. Store Mixed - ALLE STORES, LANGE KETTEN =====
+        store_ops = ["sb", "sh", "sw"]
+        
+        for pattern in ["sequential", "strided", "alternating"]:
+            for length in [5, 6, 8, 10, 12, 15]:  # Längere Ketten
+                chain = [("li", f"li {RISCVRegisters.A2}, 0x12345678")]
+                for i in range(length):
+                    op = store_ops[i % 3]
+                    
+                    if pattern == "sequential":
+                        offset = (i * 4) % 64
+                    elif pattern == "strided":
+                        offset = (i * 8) % 64
+                    else:  # alternating
+                        offset = (i * 4) % 32 if i % 2 == 0 else (i * 4) % 32 + 32
+                    
+                    instr = all_insn[op].format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)
+                    chain.append((op, instr))
+                
+                tests.append({
+                    "name": f"CLASS9_STORE_{pattern.upper()}_{length}",
+                    "safe_name": f"CLASS9_STORE_{pattern.upper()}_{length}",
+                    "instructions": chain,
+                    "category": "CLASS9_MIXED_STORE",
+                    "instruction_count": length + 1,
+                    "description": f"Store {pattern} pattern length {length}",
+                    "test_group": "mixed_per_class",
+                    "type": "latency",
+                    "test_value": -1,
+                    "value_type": "NONE"
+                })
+        
+        # ===== 7. Immediate Mixed - ALLE IMMEDIATES, LANGE KETTEN =====
+        imm_ops = ["addi", "xori", "ori", "andi", "slti", "sltiu"]
+        immediates = [1, 2, 4, 8, 16, 32, 64, 127, 255, 511, 1023, 2047]
+        
+        for imm in immediates:  # ALLE Immediate-Werte
+            for length in [6, 8, 10, 12, 15]:  # Längere Ketten
+                # Zyklische Mischung
+                ops_cycle = [imm_ops[i % len(imm_ops)] for i in range(length)]
+                chain_cycle = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                    ops_cycle, all_insn, "CLASS7_IMMEDIATE", length, "mixed", imm=imm
                 )
-                if chain:
+                if chain_cycle:
                     tests.append({
-                        "name": f"CLASS9_DIV_{vtype}_{val}_L{length}",
-                        "safe_name": f"CLASS9_DIV_{vtype}_{val}_L{length}",
-                        "instructions": chain,
-                        "category": "CLASS9_MIXED_DIV",
+                        "name": f"CLASS9_IMM_{imm}_CYC_{length}",
+                        "safe_name": f"CLASS9_IMM_{imm}_CYC_{length}",
+                        "instructions": chain_cycle,
+                        "category": "CLASS9_MIXED_IMMEDIATE",
                         "instruction_count": length,
-                        "description": f"Mixed Div val={val} len={length}",
+                        "description": f"Immediate mixed imm={imm} len={length}",
                         "test_group": "mixed_per_class",
                         "type": "latency",
-                        "test_value": val,
-                        "value_type": vtype
+                        "test_value": -1,
+                        "value_type": "NONE"
                     })
+                
+                # Addi + Xori abwechselnd
+                if length <= 8:
+                    ops_alt = []
+                    for i in range(length):
+                        ops_alt.append("addi" if i % 2 == 0 else "xori")
+                    chain_alt = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
+                        ops_alt, all_insn, "CLASS7_IMMEDIATE", length, "mixed", imm=imm
+                    )
+                    if chain_alt:
+                        tests.append({
+                            "name": f"CLASS9_IMM_{imm}_ALT_{length}",
+                            "safe_name": f"CLASS9_IMM_{imm}_ALT_{length}",
+                            "instructions": chain_alt,
+                            "category": "CLASS9_MIXED_IMMEDIATE",
+                            "instruction_count": length,
+                            "description": f"Immediate mixed addi/xori imm={imm} len={length}",
+                            "test_group": "mixed_per_class",
+                            "type": "latency",
+                            "test_value": -1,
+                            "value_type": "NONE"
+                        })
         
-        # ===== 5. Load Mixed - LANGE KETTEN =====
-        load_ops = ["lw", "lh", "lb"]
-        for length in [6, 10]:
-            chain = []
-            for i in range(length):
-                op = load_ops[i % 3]
-                dst = RISCVRegisters.A2 if i % 2 == 0 else RISCVRegisters.A4
-                offset = (i * 4) % 64
-                instr = all_insn[op].format(dst=dst, base=RISCVRegisters.BASE_REG, offset=offset)
-                chain.append((op, instr))
-            tests.append({
-                "name": f"CLASS9_LOAD_MIXED_L{length}",
-                "safe_name": f"CLASS9_LOAD_MIXED_L{length}",
-                "instructions": chain,
-                "category": "CLASS9_MIXED_LOAD",
-                "instruction_count": length,
-                "description": f"Mixed Load length {length}",
-                "test_group": "mixed_per_class",
-                "type": "latency",
-                "test_value": -1,
-                "value_type": "NONE"
-            })
+        # ===== 8. Shift-Immediate Mixed (slli, srli, srai) =====
+        shift_imm_ops = ["slli", "srli", "srai"]
+        shift_imm_values = [1, 2, 4, 8, 16, 31]
         
-        # ===== 6. Store Mixed - LANGE KETTEN =====
-        store_ops = ["sw", "sh", "sb"]
-        for length in [5, 8]:
-            chain = [("li", f"li {RISCVRegisters.A2}, 0x12345678")]
-            for i in range(length):
-                op = store_ops[i % 3]
-                offset = (i * 4) % 64
-                instr = all_insn[op].format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)
-                chain.append((op, instr))
-            tests.append({
-                "name": f"CLASS9_STORE_MIXED_L{length}",
-                "safe_name": f"CLASS9_STORE_MIXED_L{length}",
-                "instructions": chain,
-                "category": "CLASS9_MIXED_STORE",
-                "instruction_count": length + 1,
-                "description": f"Mixed Store length {length}",
-                "test_group": "mixed_per_class",
-                "type": "latency",
-                "test_value": -1,
-                "value_type": "NONE"
-            })
-        
-        # ===== 7. Immediate Mixed - LANGE KETTEN =====
-        imm_ops = ["addi", "xori", "ori", "andi"]
-        for imm in [1, 127, 2047]:
-            for length in [6, 10]:
-                ops = [imm_ops[i % 4] for i in range(length)]
+        for imm in shift_imm_values:
+            for length in [5, 7, 9, 11]:
+                ops = [shift_imm_ops[i % 3] for i in range(length)]
                 chain = Class9_Mixed_Per_Class_Generator._create_mixed_raw_chain(
                     ops, all_insn, "CLASS7_IMMEDIATE", length, "mixed", imm=imm
                 )
                 if chain:
                     tests.append({
-                        "name": f"CLASS9_IMM_{imm}_L{length}",
-                        "safe_name": f"CLASS9_IMM_{imm}_L{length}",
+                        "name": f"CLASS9_SHIFTIMM_{imm}_L{length}",
+                        "safe_name": f"CLASS9_SHIFTIMM_{imm}_L{length}",
                         "instructions": chain,
                         "category": "CLASS9_MIXED_IMMEDIATE",
                         "instruction_count": length,
-                        "description": f"Mixed Immediate imm={imm} len={length}",
+                        "description": f"Shift immediate mixed imm={imm} len={length}",
                         "test_group": "mixed_per_class",
                         "type": "latency",
                         "test_value": -1,
@@ -739,7 +942,7 @@ class Class9_Mixed_Per_Class_Generator:
         """Erstellt eine RAW-Kette mit verschiedenen Operationen"""
         
         regs = [RISCVRegisters.T0, RISCVRegisters.T1, RISCVRegisters.T2,
-                RISCVRegisters.T3, RISCVRegisters.T4, RISCVRegisters.T5]
+                RISCVRegisters.T3, RISCVRegisters.T4, RISCVRegisters.T5, RISCVRegisters.T6]
         
         instructions = []
         last_dest = None
