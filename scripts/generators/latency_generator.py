@@ -575,26 +575,47 @@ class Class5_Load_Generator:
         print(f"        → {len(tests)} Load tests generated")
         return tests
 class Class6_Store_Generator:
-    """Klasse 6: Store Operationen - REDUZIERT"""
+    """Klasse 6: Store Operationen - Umfassende Tests für Bachelorarbeit."""
     
+    # Hilfsliste für Destination-Register (für Loads nach Stores)
+    DST_REGS = ["a4", "a5", "a6", "a7"]  # a2 wird für Store-Wert verwendet
+
     @staticmethod
     def generate_all():
         tests = []
+        print("\n      → Klasse 6: Store Operationen (erweitert)...")
+        
+        # Vorhandene Single- und Forwarding-Tests (optimiert)
+        tests.extend(Class6_Store_Generator._generate_single_tests())
+        tests.extend(Class6_Store_Generator._generate_basic_forward_tests())
+        
+        # Neue Testfamilien
+        tests.extend(Class6_Store_Generator._generate_forwarding_distance_tests())
+        tests.extend(Class6_Store_Generator._generate_mixed_size_forward_tests())
+        tests.extend(Class6_Store_Generator._generate_store_buffer_stress_tests())
+        tests.extend(Class6_Store_Generator._generate_write_merging_tests())
+        
+        print(f"        → {len(tests)} Store tests generated")
+        return tests
+
+    # ------------------------------------------------------------------
+    # 1. Einzelne Stores (wie bisher, aber mit Offset-Variation)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _generate_single_tests():
+        tests = []
         all_insn = RISCVInstructions.get_all_instructions()
         store_insns = ["sb", "sh", "sw"]
-        offsets = [0, 8, 16, 24]  # Weniger offsets
-        
-        print("\n      → Klasse 6: Store Operationen...")
+        offsets = [0, 4, 8, 12, 16, 20, 24, 28]  # alle 4-Byte‑Offsets
         
         for insn_name in store_insns:
             if insn_name not in all_insn:
                 continue
-                
             tmpl = all_insn[insn_name]
-            
             for offset in offsets:
-                # ===== EIN SINGLE TEST =====
-                instr = tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)
+                instr = tmpl.format(src=RISCVRegisters.A2,
+                                    base=RISCVRegisters.BASE_REG,
+                                    offset=offset)
                 tests.append({
                     "name": f"CLASS6_{insn_name}_OFF{offset}_SINGLE",
                     "safe_name": f"CLASS6_{insn_name}_OFF{offset}_SINGLE",
@@ -610,29 +631,225 @@ class Class6_Store_Generator:
                     "test_value": -1,
                     "value_type": "NONE"
                 })
-                
-                # ===== STORE-LOAD FORWARDING =====
+        return tests
+
+    # ------------------------------------------------------------------
+    # 2. Basis‑Forwarding (Store → Load, gleiche Größe)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _generate_basic_forward_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        pairs = [("sb", "lb"), ("sh", "lh"), ("sw", "lw")]
+        offsets = [0, 8, 16, 24]  # repräsentative Offsets
+        
+        for store_insn, load_insn in pairs:
+            if store_insn not in all_insn or load_insn not in all_insn:
+                continue
+            store_tmpl = all_insn[store_insn]
+            load_tmpl = all_insn[load_insn]
+            
+            for offset in offsets:
                 instructions = [
                     ("li", f"li {RISCVRegisters.A2}, 0x12345678"),
-                    (insn_name, tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)),
-                    ("lw", f"lw {RISCVRegisters.A4}, {offset}({RISCVRegisters.BASE_REG})"),
-                    ("add", f"add {RISCVRegisters.A5}, {RISCVRegisters.A4}, {RISCVRegisters.A6}"),
+                    (store_insn, store_tmpl.format(src=RISCVRegisters.A2,
+                                                    base=RISCVRegisters.BASE_REG,
+                                                    offset=offset)),
+                    (load_insn, load_tmpl.format(dst=RISCVRegisters.A4,
+                                                  base=RISCVRegisters.BASE_REG,
+                                                  offset=offset)),
+                    ("add", f"add {RISCVRegisters.A5}, {RISCVRegisters.A4}, {RISCVRegisters.A6}")
                 ]
                 tests.append({
-                    "name": f"CLASS6_{insn_name}_OFF{offset}_FORWARD",
-                    "safe_name": f"CLASS6_{insn_name}_OFF{offset}_FORWARD",
+                    "name": f"CLASS6_{store_insn}2{load_insn}_OFF{offset}",
+                    "safe_name": f"CLASS6_{store_insn}2{load_insn}_OFF{offset}",
                     "instructions": instructions,
-                    "category": "CLASS6_STORE_RAW",
+                    "category": "CLASS6_STORE_FORWARD",
                     "instruction_count": 4,
-                    "description": f"{insn_name} forward",
+                    "description": f"{store_insn} → {load_insn} forwarding, offset {offset}",
                     "test_group": "store",
                     "type": "latency",
                     "test_value": -1,
                     "value_type": "NONE"
                 })
-        
         return tests
 
+    # ------------------------------------------------------------------
+    # 3. Forwarding-Distanz (wie viele unabhängige Instruktionen zwischen Store und Load?)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _generate_forwarding_distance_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        sw_tmpl = all_insn["sw"]
+        lw_tmpl = all_insn["lw"]
+        
+        for distance in [0, 1, 2, 3, 5, 10]:
+            instructions = [
+                ("li", f"li {RISCVRegisters.A2}, 0x12345678"),
+                ("sw", sw_tmpl.format(src=RISCVRegisters.A2,
+                                       base=RISCVRegisters.BASE_REG,
+                                       offset=0)),
+            ]
+            # Unabhängige Instruktionen (addi mit verschiedenen Registern)
+            for i in range(distance):
+                instructions.append(("addi", f"addi {Class6_Store_Generator.DST_REGS[i % len(Class6_Store_Generator.DST_REGS)]}, {RISCVRegisters.A5}, 1"))
+            instructions.append(("lw", lw_tmpl.format(dst=RISCVRegisters.A4,
+                                                       base=RISCVRegisters.BASE_REG,
+                                                       offset=0)))
+            instructions.append(("add", f"add {RISCVRegisters.A5}, {RISCVRegisters.A4}, {RISCVRegisters.A6}"))
+            
+            tests.append({
+                "name": f"CLASS6_sw_forward_dist{distance}",
+                "safe_name": f"CLASS6_sw_forward_dist{distance}",
+                "instructions": instructions,
+                "category": "CLASS6_STORE_FORWARD_DIST",
+                "instruction_count": 3 + distance,
+                "description": f"Store-forwarding with {distance} independent insns between",
+                "test_group": "store",
+                "type": "latency",
+                "test_value": -1,
+                "value_type": "NONE"
+            })
+        return tests
+
+    # ------------------------------------------------------------------
+    # 4. Gemischte Größen (sw→lb, sh→lw, sb→lh usw.)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _generate_mixed_size_forward_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        # Alle sinnvollen Kombinationen (Store → Load)
+        combinations = [
+            ("sw", "lb"), ("sw", "lh"), ("sw", "lbu"), ("sw", "lhu"),
+            ("sh", "lb"), ("sh", "lbu"), ("sh", "lw"),
+            ("sb", "lh"), ("sb", "lhu"), ("sb", "lw")
+        ]
+        for store_insn, load_insn in combinations:
+            if store_insn not in all_insn or load_insn not in all_insn:
+                continue
+            store_tmpl = all_insn[store_insn]
+            load_tmpl = all_insn[load_insn]
+            
+            # Einfacher Offset 0 (kann später erweitert werden)
+            instructions = [
+                ("li", f"li {RISCVRegisters.A2}, 0x12345678"),
+                (store_insn, store_tmpl.format(src=RISCVRegisters.A2,
+                                                base=RISCVRegisters.BASE_REG,
+                                                offset=0)),
+                (load_insn, load_tmpl.format(dst=RISCVRegisters.A4,
+                                              base=RISCVRegisters.BASE_REG,
+                                              offset=0)),
+                ("add", f"add {RISCVRegisters.A5}, {RISCVRegisters.A4}, {RISCVRegisters.A6}")
+            ]
+            tests.append({
+                "name": f"CLASS6_{store_insn}2{load_insn}_MIXED",
+                "safe_name": f"CLASS6_{store_insn}2{load_insn}_MIXED",
+                "instructions": instructions,
+                "category": "CLASS6_STORE_MIXED",
+                "instruction_count": 4,
+                "description": f"{store_insn} → {load_insn} mixed-size forwarding",
+                "test_group": "store",
+                "type": "latency",
+                "test_value": -1,
+                "value_type": "NONE"
+            })
+        return tests
+
+    # ------------------------------------------------------------------
+    # 5. Store-Buffer-Stress (lange Store-Ketten ohne Loads)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _generate_store_buffer_stress_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        sw_tmpl = all_insn["sw"]
+        
+        for count in [10, 20, 30, 50, 100]:
+            instructions = [("li", f"li {RISCVRegisters.A2}, 0x12345678")]
+            for i in range(count):
+                offset = (i * 4) % 64  # abwechselnde Offsets, um nicht immer dieselbe Cache-Line zu treffen
+                instructions.append(("sw", sw_tmpl.format(src=RISCVRegisters.A2,
+                                                           base=RISCVRegisters.BASE_REG,
+                                                           offset=offset)))
+            tests.append({
+                "name": f"CLASS6_store_stress_{count}",
+                "safe_name": f"CLASS6_store_stress_{count}",
+                "instructions": instructions,
+                "category": "CLASS6_STORE_STRESS",
+                "instruction_count": count + 1,
+                "description": f"Store buffer stress with {count} stores",
+                "test_group": "store",
+                "type": "latency",
+                "test_value": -1,
+                "value_type": "NONE"
+            })
+        return tests
+
+    # ------------------------------------------------------------------
+    # 6. Write-Merging (mehrere aufeinanderfolgende Stores, dann Load)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _generate_write_merging_tests():
+        tests = []
+        all_insn = RISCVInstructions.get_all_instructions()
+        sw_tmpl = all_insn["sw"]
+        lw_tmpl = all_insn["lw"]
+        
+        # Test 1: Vier aufeinanderfolgende Word-Stores, dann Load des letzten Worts
+        instructions1 = [
+            ("li", f"li {RISCVRegisters.A2}, 0x11111111"),
+            ("sw", sw_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=100)),
+            ("li", f"li {RISCVRegisters.A2}, 0x22222222"),
+            ("sw", sw_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=104)),
+            ("li", f"li {RISCVRegisters.A2}, 0x33333333"),
+            ("sw", sw_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=108)),
+            ("li", f"li {RISCVRegisters.A2}, 0x44444444"),
+            ("sw", sw_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=112)),
+            ("lw", lw_tmpl.format(dst=RISCVRegisters.A4, base=RISCVRegisters.BASE_REG, offset=112)),
+            ("add", f"add {RISCVRegisters.A5}, {RISCVRegisters.A4}, {RISCVRegisters.A6}")
+        ]
+        tests.append({
+            "name": "CLASS6_write_merge_4words",
+            "safe_name": "CLASS6_write_merge_4words",
+            "instructions": instructions1,
+            "category": "CLASS6_STORE_MERGE",
+            "instruction_count": 10,
+            "description": "Four sequential word stores, then load last",
+            "test_group": "store",
+            "type": "latency",
+            "test_value": -1,
+            "value_type": "NONE"
+        })
+        
+        # Test 2: Vier Byte-Stores auf aufeinanderfolgende Adressen, dann Load Word
+        sb_tmpl = all_insn["sb"]
+        instructions2 = [
+            ("li", f"li {RISCVRegisters.A2}, 0x11"),
+            ("sb", sb_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=120)),
+            ("li", f"li {RISCVRegisters.A2}, 0x22"),
+            ("sb", sb_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=121)),
+            ("li", f"li {RISCVRegisters.A2}, 0x33"),
+            ("sb", sb_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=122)),
+            ("li", f"li {RISCVRegisters.A2}, 0x44"),
+            ("sb", sb_tmpl.format(src=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=123)),
+            ("lw", lw_tmpl.format(dst=RISCVRegisters.A4, base=RISCVRegisters.BASE_REG, offset=120)),
+            ("add", f"add {RISCVRegisters.A5}, {RISCVRegisters.A4}, {RISCVRegisters.A6}")
+        ]
+        tests.append({
+            "name": "CLASS6_write_merge_4bytes",
+            "safe_name": "CLASS6_write_merge_4bytes",
+            "instructions": instructions2,
+            "category": "CLASS6_STORE_MERGE",
+            "instruction_count": 10,
+            "description": "Four byte stores to consecutive addresses, then load word",
+            "test_group": "store",
+            "type": "latency",
+            "test_value": -1,
+            "value_type": "NONE"
+        })
+        return tests
 
 class Class7_Immediate_Generator:
     """Klasse 7: Immediate Operationen - REDUZIERT"""
