@@ -77,32 +77,22 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
         safe_buffer[i] = 0xDEADBEEF;
     }
     
-    // === KASKADIERTE ADRESSEN (NUR FÜR AS_ADDR TESTS) ===
-    safe_buffer[0]  = (uint32_t)&safe_buffer[32];  // zeigt direkt auf Daten
-    safe_buffer[4]  = (uint32_t)&safe_buffer[36];  // zeigt direkt auf Daten
-    safe_buffer[8]  = (uint32_t)&safe_buffer[40];  // zeigt direkt auf Daten
-    safe_buffer[12] = (uint32_t)&safe_buffer[44];  // zeigt direkt auf Daten
+    // === POINTER-CHASE-KETTEN FÜR VERSCHIEDENE LÄNGEN ===
+    // Jede Kette besteht aus (len) aufeinanderfolgenden 32-Bit-Wörtern:
+    // - die ersten (len-1) Wörter enthalten Zeiger auf das nächste Wort
+    // - das letzte Wort enthält einen Datenwert (0xDEADBEEF + len)
+    int current = 0;
+    for (int len = 2; len <= 6; len++) {
+        int start = current;
+        for (int i = 0; i < len-1; i++) {
+            safe_buffer[start + i] = (uint32_t)&safe_buffer[start + i + 1];
+        }
+        safe_buffer[start + len - 1] = 0xDEADBEEF + len;  // eindeutiger Datenwert
+        current += len;  // nächste Kette beginnt danach
+    }
     
-    // === DATEN (keine weiteren Adressen) ===
-    safe_buffer[32] = 0xDEADBEEF;
-    safe_buffer[36] = 0xCAFEBABE;
-    safe_buffer[40] = 0x12345678;
-    safe_buffer[44] = 0x87654321;
-    
-    // === KLEINE ZAHLEN für CHAIN Tests ===
-    safe_buffer[48] = 4;
-    safe_buffer[52] = 8;
-    safe_buffer[56] = 12;
-    safe_buffer[60] = 16;
-    
-    // Debug-Ausgabe
+    // Debug-Ausgabe (minimal)
     printf("Buffer at: 0x%08lx\\n", (unsigned long)safe_buffer);
-    printf("safe_buffer[0] = 0x%08lx (zeigt auf safe_buffer[32])\\n", 
-           (unsigned long)safe_buffer[0]);
-    printf("safe_buffer[4] = 0x%08lx (zeigt auf safe_buffer[36])\\n", 
-           (unsigned long)safe_buffer[4]);
-    printf("safe_buffer[32] = 0x%08lx (echte Daten)\\n", 
-           (unsigned long)safe_buffer[32]);
     """
     
     reg_init_code = [

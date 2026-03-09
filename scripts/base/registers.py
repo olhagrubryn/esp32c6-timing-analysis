@@ -27,6 +27,11 @@ class RISCVRegisters:
     BASE_REGS = [S0, S1, S2]   # weitere mögliche Basisregister (falls benötigt)
     INDEPENDENT_REGS = CHAIN_REGS
     
+    # ===== NEU: Füge diese Zeilen hinzu =====
+    DST_REGS = ["a2", "a4", "a5", "a6", "a7"]  # Destination Register für Loads
+    SRC_REGS = ["a2", "a4", "a5", "a6", "a7"]  # Source Register für ALU-Operationen
+    TEMP_REGS = ["a2", "a4", "a5", "a6", "a7"]  # Temporäre Register
+    
     @classmethod
     def get_all_work_registers(cls) -> list:
         return cls.ALL_WORK_REGS.copy()

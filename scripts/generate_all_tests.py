@@ -110,14 +110,26 @@ class LatencyFileGenerator:
         group = test.get("test_group", "")
         ic = test["instruction_count"]
         
-        if "BRANCH" in name or "BRANCH" in category or group == "branch":
+        # Explizite Group-Zuordnung zuerst
+        if group == "branch":
             return "branch"
+        if group == "raw_chains":
+            return "raw_chains"
+        if group == "single":
+            return "single"
+        
+        # Fallback auf Name/Category
+        if "BRANCH" in name or "BRANCH" in category:
+            return "branch"
+        if "RAW" in name or "ZERO" in name:
+            return "raw_chains"
         if "LOAD" in category or "STORE" in category or "MEM" in name:
             return "memory"
         if "RAW" in name or group == "raw_chains" or "ZERO" in name:  
             return "raw_chains"
         if ic == 1 or "SINGLE" in name:
             return "single"
+        
         return "sequences"
     
     @staticmethod

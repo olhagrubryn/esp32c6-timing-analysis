@@ -434,105 +434,78 @@ class Class4_Div_Generator:
                 })
         
         return tests
+
 class Class5_Load_Generator:
-    """Klasse 5: Load Operationen - NUR ABSOLUT STABILE TESTS"""
+    """Klasse 5: Load Operationen - ALLE TESTS (Single, Load-to-Use, Chains, Pointer-Chase)"""
     
     @staticmethod
-    def generate_all():
+    def generate_pointer_chase_tests():
+        """Generiert RAW-Ketten von Loads (Pointer-Chasing) mit isolierten Ketten."""
         tests = []
         all_insn = RISCVInstructions.get_all_instructions()
-        load_insns = ["lb", "lh", "lw", "lbu", "lhu"]
-        offsets = [0, 4, 8, 12, 16, 20, 24, 28]
-        
-        print("\n      → Klasse 5: Load Operationen (NUR stabile Tests)...")
-        
-        # ===== 1. ALLE SINGLE TESTS (immer stabil) =====
-        for insn_name in load_insns:
-            if insn_name not in all_insn:
-                continue
-            tmpl = all_insn[insn_name]
-            
-            for offset in offsets:
-                instr = tmpl.format(dst=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)
-                tests.append({
-                    "name": f"CLASS5_{insn_name}_OFF{offset}_SINGLE",
-                    "safe_name": f"CLASS5_{insn_name}_OFF{offset}_SINGLE",
-                    "instructions": [(insn_name, instr)],
-                    "category": "CLASS5_LOAD_SINGLE",
-                    "instruction_count": 1,
-                    "description": f"Single {insn_name} offset {offset}",
-                    "test_group": "single",
-                    "type": "latency",
-                    "test_value": -1,
-                    "value_type": "NONE"
-                })
-        
-        # ===== 2. ALLE LOAD-TO-USE TESTS (immer stabil) =====
-        for insn_name in load_insns:
-            if insn_name not in all_insn:
-                continue
-            tmpl = all_insn[insn_name]
-            
-            for offset in offsets:
-                for use_op in ["add", "xor", "and", "or"]:
-                    instructions = [
-                        (insn_name, tmpl.format(dst=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)),
-                        (use_op, f"{use_op} {RISCVRegisters.A4}, {RISCVRegisters.A2}, {RISCVRegisters.A5}"),
-                    ]
-                    tests.append({
-                        "name": f"CLASS5_{insn_name}_OFF{offset}_TO_{use_op}",
-                        "safe_name": f"CLASS5_{insn_name}_OFF{offset}_TO_{use_op}",
-                        "instructions": instructions,
-                        "category": "CLASS5_LOAD_USE",
-                        "instruction_count": 2,
-                        "description": f"RAW: {insn_name} → {use_op}",
-                        "test_group": "load_raw",
-                        "type": "latency",
-                        "test_value": -1,
-                        "value_type": "NONE"
-                    })
-        
-        # ===== 3. NUR EINEN CHAIN TEST (funktioniert garantiert) =====
         lw_tmpl = all_insn["lw"]
-        instructions = [
-            ("lw", lw_tmpl.format(dst=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=0)),
-            ("lw", lw_tmpl.format(dst=RISCVRegisters.A4, base=RISCVRegisters.A2, offset=0)),
-        ]
-        tests.append({
-            "name": "CLASS5_lw_CHAIN2_OFF0",
-            "safe_name": "CLASS5_lw_CHAIN2_OFF0",
-            "instructions": instructions,
-            "category": "CLASS5_LOAD_CHAIN",
-            "instruction_count": 2,
-            "description": "RAW Chain: lw (Adresse) → lw (Daten) offset=0",
-            "test_group": "load_chain",
-            "type": "latency",
-            "test_value": -1,
-            "value_type": "NONE"
-        })
         
+        # Die Ketten liegen im Buffer nacheinander: Länge2 ab Byteoffset 0,
+        # Länge3 ab Byteoffset (2*4)=8, Länge4 ab (2+3)*4=20, usw.
+        offsets = {
+            2: 0,
+            3: 2 * 4,   # nach Länge2 (2 Wörter)
+            4: (2+3) * 4,
+            5: (2+3+4) * 4,
+            6: (2+3+4+5) * 4,
+        }
         
+        for length in [2, 3, 4, 5, 6]:
+            start_offset = offsets[length]
+            instructions = []
+            # Erster Load: Adresse aus a3 mit dem berechneten Byte-Offset
+            instructions.append(("lw", lw_tmpl.format(dst=RISCVRegisters.A2,
+                                                      base=RISCVRegisters.BASE_REG,
+                                                      offset=start_offset)))
+            last_dst = RISCVRegisters.A2
+            
+            # Weitere Loads, die jeweils die Adresse aus dem vorherigen Load verwenden (offset 0)
+            for i in range(1, length):
+                dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
+                instructions.append(("lw", lw_tmpl.format(dst=dst,
+                                                           base=last_dst,
+                                                           offset=0)))
+                last_dst = dst
+            
+            tests.append({
+                "name": f"CLASS5_lw_PTRCHASE_{length}",
+                "safe_name": f"CLASS5_lw_PTRCHASE_{length}",
+                "instructions": instructions,
+                "category": "CLASS5_LOAD_CHAIN",
+                "instruction_count": length,
+                "description": f"Pointer chase length {length} (RAW chain)",
+                "test_group": "raw_chains",
+                "type": "latency",
+                "test_value": -1,
+                "value_type": "NONE"
+            })
         return tests
-class Class5_Load_Generator:
-    """Klasse 5: Load Operationen - NUR ABSOLUT STABILE TESTS"""
     
     @staticmethod
     def generate_all():
+        print("      → Klasse 5: Load Generator wird ausgeführt!!!") 
         tests = []
         all_insn = RISCVInstructions.get_all_instructions()
         load_insns = ["lb", "lh", "lw", "lbu", "lhu"]
         offsets = [0, 4, 8, 12, 16, 20, 24, 28]
         
-        print("\n      → Klasse 5: Load Operationen (NUR stabile Tests)...")
+        print("\n      → Klasse 5: Load Operationen...")
         
-        # ===== 1. ALLE SINGLE TESTS (immer stabil) =====
+        # ===== 1. ALLE SINGLE TESTS =====
         for insn_name in load_insns:
             if insn_name not in all_insn:
                 continue
             tmpl = all_insn[insn_name]
             
             for offset in offsets:
-                instr = tmpl.format(dst=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)
+                instr = tmpl.format(dst=RISCVRegisters.A2, 
+                                   base=RISCVRegisters.BASE_REG, 
+                                   offset=offset)
                 tests.append({
                     "name": f"CLASS5_{insn_name}_OFF{offset}_SINGLE",
                     "safe_name": f"CLASS5_{insn_name}_OFF{offset}_SINGLE",
@@ -540,13 +513,13 @@ class Class5_Load_Generator:
                     "category": "CLASS5_LOAD_SINGLE",
                     "instruction_count": 1,
                     "description": f"Single {insn_name} offset {offset}",
-                    "test_group": "single",
+                    "test_group": "single",  # single bleibt single
                     "type": "latency",
                     "test_value": -1,
                     "value_type": "NONE"
                 })
         
-        # ===== 2. ALLE LOAD-TO-USE TESTS (immer stabil) =====
+        # ===== 2. ALLE LOAD-TO-USE TESTS =====
         for insn_name in load_insns:
             if insn_name not in all_insn:
                 continue
@@ -555,7 +528,9 @@ class Class5_Load_Generator:
             for offset in offsets:
                 for use_op in ["add", "xor", "and", "or"]:
                     instructions = [
-                        (insn_name, tmpl.format(dst=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=offset)),
+                        (insn_name, tmpl.format(dst=RISCVRegisters.A2, 
+                                               base=RISCVRegisters.BASE_REG, 
+                                               offset=offset)),
                         (use_op, f"{use_op} {RISCVRegisters.A4}, {RISCVRegisters.A2}, {RISCVRegisters.A5}"),
                     ]
                     tests.append({
@@ -565,17 +540,21 @@ class Class5_Load_Generator:
                         "category": "CLASS5_LOAD_USE",
                         "instruction_count": 2,
                         "description": f"RAW: {insn_name} → {use_op}",
-                        "test_group": "load_raw",
+                        "test_group": "raw_chains",  # GEÄNDERT: von load_raw zu raw_chains
                         "type": "latency",
                         "test_value": -1,
                         "value_type": "NONE"
                     })
         
-        # ===== 3. NUR EINEN CHAIN TEST (funktioniert garantiert) =====
+        # ===== 3. CHAIN TEST (bestehend) =====
         lw_tmpl = all_insn["lw"]
         instructions = [
-            ("lw", lw_tmpl.format(dst=RISCVRegisters.A2, base=RISCVRegisters.BASE_REG, offset=0)),
-            ("lw", lw_tmpl.format(dst=RISCVRegisters.A4, base=RISCVRegisters.A2, offset=0)),
+            ("lw", lw_tmpl.format(dst=RISCVRegisters.A2, 
+                                 base=RISCVRegisters.BASE_REG, 
+                                 offset=0)),
+            ("lw", lw_tmpl.format(dst=RISCVRegisters.A4, 
+                                 base=RISCVRegisters.A2, 
+                                 offset=0)),
         ]
         tests.append({
             "name": "CLASS5_lw_CHAIN2_OFF0",
@@ -584,14 +563,16 @@ class Class5_Load_Generator:
             "category": "CLASS5_LOAD_CHAIN",
             "instruction_count": 2,
             "description": "RAW Chain: lw (Adresse) → lw (Daten) offset=0",
-            "test_group": "load_chain",
+            "test_group": "raw_chains",  # GEÄNDERT: von load_chain zu raw_chains
             "type": "latency",
             "test_value": -1,
             "value_type": "NONE"
         })
         
-       
+        # ===== 4. NEUE POINTER-CHASE TESTS =====
+        tests.extend(Class5_Load_Generator.generate_pointer_chase_tests())
         
+        print(f"        → {len(tests)} Load tests generated")
         return tests
 class Class6_Store_Generator:
     """Klasse 6: Store Operationen - REDUZIERT"""
