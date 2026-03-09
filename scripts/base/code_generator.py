@@ -40,10 +40,9 @@ def generate_test_function(test: dict, test_type: str = "latency") -> Tuple[str,
     
     return generate_latency_test_function(func_name, test, instruction_block, test.get("test_value", -1), test.get("value_type", "NONE"), is_branch)
 
-
 def generate_loadstore_test_function(func_name: str, test: dict, instruction_block: str,
                                     test_value, value_type) -> Tuple[str, str]:
-    """Load/Store Tests."""
+    """Load/Store Tests mit dynamischer Buffer-Initialisierung."""
     
     used_regs = set()
     base_registers = set()
@@ -65,18 +64,46 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     clobber_list = [f'"{reg}"' for reg in sorted(used_regs)]
     clobber_str = ', '.join(clobber_list) + ', "memory"'
     
+    # Buffer-Deklaration (ohne Initialisierung)
     buffer_decl = """    
-    // Safe buffer in RAM - für Load/Store Tests
-    static uint32_t safe_buffer[128] __attribute__((aligned(64))) = {
-        [0]  = 0x11111111, [1]  = 0x22222222, [2]  = 0x33333333, [3]  = 0x44444444,
-        [4]  = 0x55555555, [5]  = 0x66666666, [6]  = 0x77777777, [7]  = 0x88888888,
-        [8]  = 0x99999999, [9]  = 0xAAAAAAAA, [10] = 0xBBBBBBBB, [11] = 0xCCCCCCCC,
-        [12] = 0xDDDDDDDD, [13] = 0xEEEEEEEE, [14] = 0xFFFFFFFF, [15] = 0x12345678,
-        [16] = 0x11111111, [17] = 0x22222222, [18] = 0x33333333, [19] = 0x44444444,
-        [20] = 0x55555555, [21] = 0x66666666, [22] = 0x77777777, [23] = 0x88888888,
-        [24] = 0x99999999, [25] = 0xAAAAAAAA, [26] = 0xBBBBBBBB, [27] = 0xCCCCCCCC,
-        [28] = 0xDDDDDDDD, [29] = 0xEEEEEEEE, [30] = 0xFFFFFFFF, [31] = 0x87654321,
-    };"""
+    // Safe buffer in RAM
+    static uint32_t safe_buffer[128] __attribute__((aligned(64)));
+    """
+    
+    # Dynamische Initialisierung zur Laufzeit - MIT KORREKTEN PRINTF FORMATS
+    init_code = """
+    // Dynamische Initialisierung des Buffers
+    for (int i = 0; i < 128; i++) {
+        safe_buffer[i] = 0xDEADBEEF;
+    }
+    
+    // === KASKADIERTE ADRESSEN (NUR FÜR AS_ADDR TESTS) ===
+    safe_buffer[0]  = (uint32_t)&safe_buffer[32];  // zeigt direkt auf Daten
+    safe_buffer[4]  = (uint32_t)&safe_buffer[36];  // zeigt direkt auf Daten
+    safe_buffer[8]  = (uint32_t)&safe_buffer[40];  // zeigt direkt auf Daten
+    safe_buffer[12] = (uint32_t)&safe_buffer[44];  // zeigt direkt auf Daten
+    
+    // === DATEN (keine weiteren Adressen) ===
+    safe_buffer[32] = 0xDEADBEEF;
+    safe_buffer[36] = 0xCAFEBABE;
+    safe_buffer[40] = 0x12345678;
+    safe_buffer[44] = 0x87654321;
+    
+    // === KLEINE ZAHLEN für CHAIN Tests ===
+    safe_buffer[48] = 4;
+    safe_buffer[52] = 8;
+    safe_buffer[56] = 12;
+    safe_buffer[60] = 16;
+    
+    // Debug-Ausgabe
+    printf("Buffer at: 0x%08lx\\n", (unsigned long)safe_buffer);
+    printf("safe_buffer[0] = 0x%08lx (zeigt auf safe_buffer[32])\\n", 
+           (unsigned long)safe_buffer[0]);
+    printf("safe_buffer[4] = 0x%08lx (zeigt auf safe_buffer[36])\\n", 
+           (unsigned long)safe_buffer[4]);
+    printf("safe_buffer[32] = 0x%08lx (echte Daten)\\n", 
+           (unsigned long)safe_buffer[32]);
+    """
     
     reg_init_code = [
         '    uint32_t safe_buffer_addr = (uint32_t)safe_buffer;',
@@ -150,6 +177,8 @@ test_result_t {func_name}(void) {{
     test_result_t result = {{0}};
     
     {buffer_decl}
+    
+{init_code}
     
 {reg_init_str}
 {warmup_code}
