@@ -102,6 +102,7 @@ class LatencyFileGenerator:
             os.makedirs(os.path.join(TESTS_DIR, d), exist_ok=True)
         print(f"  ✓ Created latency test subdirectories")
     
+          
     @staticmethod
     def _subdir(test):
         name = test["name"]
@@ -113,12 +114,10 @@ class LatencyFileGenerator:
             return "branch"
         if "LOAD" in category or "STORE" in category or "MEM" in name:
             return "memory"
-        if "RAW" in name or group == "raw_chains":
+        if "RAW" in name or group == "raw_chains" or "ZERO" in name:  
             return "raw_chains"
         if ic == 1 or "SINGLE" in name:
             return "single"
-        if "ZERO" in name:
-            return "sequences"
         return "sequences"
     
     @staticmethod

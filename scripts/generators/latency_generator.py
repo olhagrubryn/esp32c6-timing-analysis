@@ -165,18 +165,76 @@ class Class1_ALU_Generator:
                             "test_value": -1,
                             "value_type": "NONE"
                         })
-            
-            # ===== ZERO IDIOM (nur ein Test pro insn) =====
+        
+            # ===== ZERO IDIOM TESTS (für sub und xor) =====
             if insn_name in ["sub", "xor"]:
-                instr = tmpl.format(dst=RISCVRegisters.T0, src1=RISCVRegisters.T0, src2=RISCVRegisters.T0)
+                print(f"        Adding zero idiom tests for {insn_name}")
+                
+                # Single Zero-Idiom
+                zero_instr = tmpl.format(dst=RISCVRegisters.T0, src1=RISCVRegisters.T0, src2=RISCVRegisters.T0)
                 tests.append({
                     "name": f"CLASS1_{insn_name}_ZEROIDIOM",
                     "safe_name": f"CLASS1_{insn_name}_ZEROIDIOM",
-                    "instructions": [(insn_name, instr)],
+                    "instructions": [(insn_name, zero_instr)],
                     "category": "CLASS1_ALU_ZERO",
                     "instruction_count": 1,
-                    "description": f"Zero idiom: {insn_name}",
-                    "test_group": "zero_idioms",
+                    "description": f"Zero idiom: {insn_name} (RAW on self)",
+                    "test_group": "raw_chains",  # ← GEÄNDERT: von "zero_idioms" zu "raw_chains"
+                    "type": "latency",
+                    "test_value": -1,
+                    "value_type": "NONE"
+                })
+                
+                # Zero-Idiom mit verschiedenen Registern
+                for reg in [RISCVRegisters.T0, RISCVRegisters.A0, RISCVRegisters.S0]:
+                    zero_instr_reg = tmpl.format(dst=reg, src1=reg, src2=reg)
+                    tests.append({
+                        "name": f"CLASS1_{insn_name}_ZEROIDIOM_{reg}",
+                        "safe_name": f"CLASS1_{insn_name}_ZEROIDIOM_{reg}",
+                        "instructions": [(insn_name, zero_instr_reg)],
+                        "category": "CLASS1_ALU_ZERO_REG",
+                        "instruction_count": 1,
+                        "description": f"Zero idiom: {insn_name} with {reg} (RAW on self)",
+                        "test_group": "raw_chains",  # ← GEÄNDERT
+                        "type": "latency",
+                        "test_value": -1,
+                        "value_type": "NONE"
+                    })
+                
+                # Zero-Idiom Chain (RAW mit Zero als Quelle)
+                zero_chain = [
+                    (insn_name, tmpl.format(dst=RISCVRegisters.T0, src1=RISCVRegisters.T0, src2=RISCVRegisters.T0)),
+                    ("add", f"add {RISCVRegisters.T1}, {RISCVRegisters.T0}, {RISCVRegisters.T2}"),
+                    ("xor", f"xor {RISCVRegisters.T3}, {RISCVRegisters.T1}, {RISCVRegisters.T4}"),
+                ]
+                tests.append({
+                    "name": f"CLASS1_{insn_name}_ZEROIDIOM_CHAIN",
+                    "safe_name": f"CLASS1_{insn_name}_ZEROIDIOM_CHAIN",
+                    "instructions": zero_chain,
+                    "category": "CLASS1_ALU_ZERO_CHAIN",
+                    "instruction_count": 3,
+                    "description": f"Zero idiom {insn_name} → add → xor (RAW chain)",
+                    "test_group": "raw_chains",  # ← GEÄNDERT
+                    "type": "latency",
+                    "test_value": -1,
+                    "value_type": "NONE"
+                })
+                
+                # Zero-Idiom mit nachfolgender RAW-Kette
+                zero_raw_chain = [
+                    (insn_name, tmpl.format(dst=RISCVRegisters.T0, src1=RISCVRegisters.T0, src2=RISCVRegisters.T0)),
+                    ("add", f"add {RISCVRegisters.T1}, {RISCVRegisters.T0}, {RISCVRegisters.T2}"),
+                    ("add", f"add {RISCVRegisters.T3}, {RISCVRegisters.T1}, {RISCVRegisters.T4}"),
+                    ("add", f"add {RISCVRegisters.T5}, {RISCVRegisters.T3}, {RISCVRegisters.T6}"),
+                ]
+                tests.append({
+                    "name": f"CLASS1_{insn_name}_ZEROIDIOM_RAW3",
+                    "safe_name": f"CLASS1_{insn_name}_ZEROIDIOM_RAW3",
+                    "instructions": zero_raw_chain,
+                    "category": "CLASS1_ALU_ZERO_RAW",
+                    "instruction_count": 4,
+                    "description": f"Zero idiom {insn_name} followed by 3 adds (RAW chain)",
+                    "test_group": "raw_chains",  # ← GEÄNDERT
                     "type": "latency",
                     "test_value": -1,
                     "value_type": "NONE"

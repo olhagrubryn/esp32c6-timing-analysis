@@ -49,6 +49,7 @@ class RISCVRegisters:
             "s_regs": [cls.S0, cls.S1, cls.S2],
             "mixed": [cls.T0, cls.A1, cls.S2],
             "same_reg": [cls.T0, cls.T0, cls.T0],
+            "diff_reg": [cls.A2, cls.A4, cls.A5],  
             "dst_src1": [cls.T0, cls.T0, cls.T1],
             "dst_src2": [cls.T0, cls.T1, cls.T0],
             "src1_src2": [cls.T1, cls.T1, cls.T1],
