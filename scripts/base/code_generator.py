@@ -174,8 +174,6 @@ test_result_t {func_name}(void) {{
 {warmup_code}
     
     uint32_t total_cycles = 0;
-    result.min = 999999999;
-    result.max = 0;
     uint32_t cycles = 0;
     
     for (int iter = 0; iter < 2; iter++) {{
@@ -201,16 +199,12 @@ test_result_t {func_name}(void) {{
         if (iter > 0) {{
             cycles = t_end - t_start - 1;
             total_cycles = cycles;
-            result.min = cycles;
-            result.max = cycles;
         }}
     }}
     
-    result.mean = (float)total_cycles;
-    result.stddev = 0.0f;
-    result.ci = 0.0f;
-    result.rel_error = 0.0f;
-    result.cpi = result.mean / (float){test['instruction_count']};
+    result.mean = total_cycles; 
+    result.ci = 0;
+    result.cpi = result.mean / {test['instruction_count']};
     
     return result;
 }}
@@ -288,7 +282,6 @@ test_result_t {func_name}(void) {{
 {chr(10).join(reg_init)}
 {warmup}
     
-    result.min = 999999999; result.max = 0;
     uint32_t cycles = 0;
     
     for (int iter = 0; iter < 2; iter++) {{
@@ -311,11 +304,10 @@ test_result_t {func_name}(void) {{
         
         if (iter > 0) {{
             cycles = t_end - t_start - 1;
-            result.min = result.max = result.mean = cycles;
+            result.mean = cycles;
         }}
     }}
     
-    result.stddev = result.ci = result.rel_error = 0.0f;
     result.cpi = result.mean / (float){test['instruction_count']};
     return result;
 }}"""
@@ -387,7 +379,7 @@ test_result_t {func_name}(void) {{
 {chr(10).join(reg_init)}
 {warmup}
     
-    result.min = 999999999; result.max = 0;
+    
     uint32_t cycles = 0;
     
     for (int iter = 0; iter < 2; iter++) {{
@@ -410,11 +402,9 @@ test_result_t {func_name}(void) {{
         
         if (iter > 0) {{
             cycles = t_end - t_start - 1;
-            result.min = result.max = result.mean = cycles;
+            result.mean = cycles;
         }}
     }}
-    
-    result.stddev = result.ci = result.rel_error = 0.0f;
     result.cpi = result.mean / (float){test['instruction_count']};
     return result;
 }}"""
@@ -470,7 +460,6 @@ test_result_t {func_name}(void) {{
     {reg_init_str}
 {warmup}
     
-    result.min = 999999999; result.max = 0;
     uint32_t cycles = 0;
     
     for (int iter = 0; iter < 2; iter++) {{
@@ -493,11 +482,9 @@ test_result_t {func_name}(void) {{
         
         if (iter > 0) {{
             cycles = t_end - t_start - 1;
-            result.min = result.max = result.mean = cycles;
+            result.mean = cycles;
         }}
     }}
-    
-    result.stddev = result.ci = result.rel_error = 0.0f;
     result.cpi = result.mean / (float){test['instruction_count']};
     return result;
 }}"""

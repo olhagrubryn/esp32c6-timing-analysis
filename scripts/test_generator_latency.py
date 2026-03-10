@@ -1255,28 +1255,23 @@ void run_all_latency_tests(void) {{
     printf("%-30s %-12s %-12s %-12s %-15s %s\\n",
            "---------", "-----------", "---", "----------", "-----", "--------");
     
-    float total_latency = 0;
-    float min_latency = 999999;
-    float max_latency = 0;
+    int total_latency = 0;
     
     for (int i = 0; i < NUM_TESTS; i++) {{
         const latency_test_t* test = &all_tests[i];
         
         // 3 Runs für statistische Signifikanz
-        float cycles_sum = 0;
+        int cycles_sum = 0;
         
         for (int run = 0; run < 3; run++) {{
-            float cycles = test->function();
+            int cycles = test->function();
             cycles_sum += cycles;
         }}
         
-        float cycles_avg = cycles_sum / 3.0f;
-        float cpi = cycles_avg / (float)test->instruction_count;
-        float per_instruction = cycles_avg / (float)test->iterations / (float)test->instruction_count;
+        int cpi = cycles_avg / test->instruction_count;
+        int per_instruction = cycles_avg / (float)test->iterations / (float)test->instruction_count;
         
         total_latency += per_instruction;
-        if (per_instruction < min_latency) min_latency = per_instruction;
-        if (per_instruction > max_latency) max_latency = per_instruction;
         
         printf("%-30s %-12.2f %-12.2f %-12.2f %-15s %s\\n",
                test->name, cycles_avg, cpi, per_instruction, test->group, test->category);
@@ -1321,12 +1316,9 @@ void print_statistical_summary(void) {{
     }}
     
     float mean = sum / count;
-    float variance = (sum_sq - (sum * sum)/count) / (count - 1);
-    float stddev = sqrtf(variance);
     
     printf("\\nStatistical Summary:\\n");
     printf("  Mean CPI: %.2f\\n", mean);
-    printf("  Std Dev: %.2f\\n", stddev);
 }}
 """
     

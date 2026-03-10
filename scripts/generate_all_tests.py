@@ -234,7 +234,7 @@ class MasterFileGenerator:
 #include <math.h>
 
 typedef struct {
-    float mean, stddev, min, max, ci, cpi, rel_error;
+    float mean,  ci, cpi;
 } test_result_t;
 
 #endif"""
@@ -430,9 +430,9 @@ void run_latency_multi_tests(void) {{
     printf("\\n--- Multi Instruction Latency (>=10 ops) ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
         if (!strcmp(all_tests[i].type,"latency") && all_tests[i].instruction_count >= 10)
-            printf("%s (%d ops): %.2f cycles (CPI: %.2f)\\n", 
-                   all_tests[i].name, all_tests[i].instruction_count,
-                   all_tests[i].func.as_result().mean, all_tests[i].func.as_result().cpi);
+            printf("%s (%d ops): CPI = %.2f\\n", 
+                    all_tests[i].name, all_tests[i].instruction_count,
+                    all_tests[i].func.as_result().cpi);
 }}
 
 void run_latency_raw_tests(void) {{
@@ -466,13 +466,13 @@ void run_latency_divider_value_tests(void) {{
 
 void run_all_latency_tests(void) {{
     printf("\\n================================================================");
-    printf("\\n📊 ALLE LATENZ-TESTS (%d Tests)", LATENCY_TEST_COUNT);
+    printf("\\n ALLE LATENZ-TESTS (%d Tests)", LATENCY_TEST_COUNT);
     printf("\\n================================================================\\n\\n");
     
-    printf("%-45s %-8s %-8s %-8s %-8s %-12s %s\\n", 
-           "Test Name", "Mean", "CPI", "Min", "Max", "Category", "Value");
-    printf("%-45s %-8s %-8s %-8s %-8s %-12s %s\\n",
-           "---------", "----", "---", "---", "---", "--------", "-----");
+    printf("%-45s %-8s %-8s %-12s %s\\n", 
+        "Test Name", "Cycles", "CPI", "Category", "Value");
+    printf("%-45s %-8s %-8s %-12s %s\\n",
+        "---------", "------", "---", "--------", "-----");
     
     float total_cpi = 0;
     int count = 0;
@@ -491,13 +491,13 @@ void run_all_latency_tests(void) {{
                 strcpy(value_str, "-");
             }}
             
-            printf("%-45s %-8.2f %-8.2f %-8.0f %-8.0f %-12s %s\\n",
-                   all_tests[i].name, r.mean, r.cpi, r.min, r.max,
+            printf("%-45s %-8.2f %-8.0f %-12s %s\\n",
+                   all_tests[i].name, r.mean, r.cpi,
                    all_tests[i].category, value_str);
         }}
     }}
     
-    printf("\\n📈 Zusammenfassung:\\n");
+    printf("\\n Zusammenfassung:\\n");
     printf("  • Tests insgesamt: %d\\n", count);
     printf("  • Durchschnittlicher CPI: %.2f\\n", total_cpi / count);
 }}
@@ -527,7 +527,7 @@ void run_throughput_comparison_tests(void) {{
 
 void run_all_throughput_tests(void) {{
     printf("\\n================================================================");
-    printf("\\n📊 ALLE DURCHSATZ-TESTS (%d Tests)", THROUGHPUT_TEST_COUNT);
+    printf("\\n ALLE DURCHSATZ-TESTS (%d Tests)", THROUGHPUT_TEST_COUNT);
     printf("\\n================================================================\\n\\n");
     
     printf("%-45s %-10s %-10s %-15s %s\\n", 
@@ -558,7 +558,7 @@ void run_all_throughput_tests(void) {{
         }}
     }}
     
-    printf("\\n📈 Zusammenfassung:\\n");
+    printf("\\n Zusammenfassung:\\n");
     printf("  • Tests insgesamt: %d\\n", count);
     printf("  • Durchschnittlicher CPI: %.3f\\n", total_cpi / count);
     printf("  • Durchschnittlicher IPC: %.3f\\n", 1.0f / (total_cpi / count));
@@ -571,7 +571,7 @@ void run_all_tests(void) {{
 
 void compare_latency_throughput(void) {{
     printf("\\n================================================================");
-    printf("\\n📊 VERGLEICH LATENZ vs DURCHSATZ");
+    printf("\\n VERGLEICH LATENZ vs DURCHSATZ");
     printf("\\n================================================================\\n\\n");
     
     printf("%-20s %-15s %-15s %-15s %s\\n", 
@@ -609,7 +609,7 @@ def main():
     
     total_tests = len(latency_tests) + len(throughput_tests)
     
-    print(f"\n📊 GESAMT: {total_tests} Tests")
+    print(f"\n  GESAMT: {total_tests} Tests")
     print(f"   • Latenz: {len(latency_tests)}")
     print(f"   • Durchsatz: {len(throughput_tests)}")
     
@@ -623,7 +623,7 @@ def main():
         for cat, count in sorted(categories.items()):
             print(f"    • {cat}: {count}")
     
-    print("\n📁 Generiere Dateien...")
+    print("\n  Generiere Dateien...")
     
     os.makedirs(MAIN_DIR, exist_ok=True)
     os.makedirs(TESTS_DIR, exist_ok=True)
@@ -648,13 +648,13 @@ def main():
     print("  GENERIERUNG ABGESCHLOSSEN!".center(80))
     print("="*80)
     
-    print(f"\n📊 STATISTIK:")
+    print(f"\n STATISTIK:")
     print(f"   • Latenz-Tests: {len(latency_tests)}")
     print(f"   • Durchsatz-Tests: {len(throughput_tests)}")
     print(f"   • Gesamt: {total_tests}")
     print(f"   • Generierte C-Dateien: {len(files_l) + len(files_t)}")
     
-    print("\n📋 Nächste Schritte:")
+    print("\n  Nächste Schritte:")
     print("   idf.py clean && idf.py build && idf.py -p PORT flash monitor")
     print("\n   Im Menü Option 1 wählen für ALLE Tests!")
 
