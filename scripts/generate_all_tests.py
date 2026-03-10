@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/generate_all_tests.py - FINALE VERSION (OHNE ITERATIONS)
+# scripts/generate_all_tests.py 
 
 import os, sys, random, argparse
 from collections import defaultdict
@@ -30,14 +30,14 @@ class TestCollector:
         print("\n  [Latency] Collecting tests...")
         
         generators = [
-            ("Klasse 1: ALU", Class1_ALU_Generator.generate_all),
-            ("Klasse 2: Shift", Class2_Shift_Generator.generate_all),
-            ("Klasse 3: Mul", Class3_Mul_Generator.generate_all),
-            ("Klasse 4: Div", Class4_Div_Generator.generate_all),
-            ("Klasse 5: Load", Class5_Load_Generator.generate_all),
-            ("Klasse 6: Store", Class6_Store_Generator.generate_all),
-            ("Klasse 7: Immediate", Class7_Immediate_Generator.generate_all),
-            ("Klasse 9: Mixed per Class", Class9_Mixed_Per_Class_Generator.generate_all),
+            ("Class 1: ALU", Class1_ALU_Generator.generate_all),
+            ("Class 2: Shift", Class2_Shift_Generator.generate_all),
+            ("Class 3: Mul", Class3_Mul_Generator.generate_all),
+            ("Class 4: Div", Class4_Div_Generator.generate_all),
+            ("Class 5: Load", Class5_Load_Generator.generate_all),
+            ("Class 6: Store", Class6_Store_Generator.generate_all),
+            ("Class 7: Immediate", Class7_Immediate_Generator.generate_all),
+            ("Class 9: Mixed per Class", Class9_Mixed_Per_Class_Generator.generate_all),
         ]
         
         for name, gen in generators:
@@ -110,7 +110,7 @@ class LatencyFileGenerator:
         group = test.get("test_group", "")
         ic = test["instruction_count"]
         
-        # Explizite Group-Zuordnung zuerst
+        # Explicit group assignment first
         if group == "branch":
             return "branch"
         if group == "raw_chains":
@@ -118,7 +118,7 @@ class LatencyFileGenerator:
         if group == "single":
             return "single"
         
-        # Fallback auf Name/Category
+        # Fallback to name/category
         if "BRANCH" in name or "BRANCH" in category:
             return "branch"
         if "RAW" in name or "ZERO" in name:
@@ -157,7 +157,7 @@ class LatencyFileGenerator:
                 with open(os.path.join(subdir_path, cf), "w") as f:
                     f.write(generate_c_file_content(test, fc))
                 
-                # OHNE iterations - die Struktur wird in generate_test_suite_c angepasst
+                # WITHOUT iterations - structure will be adapted in generate_test_suite_c
                 test_entries.append(
                     f'    {{"{test["name"]}", {{.as_result = {fn}}}, '
                     f'{test["instruction_count"]}, "{test.get("description","")}", '
@@ -209,7 +209,7 @@ class ThroughputFileGenerator:
             with open(os.path.join(subdir_path, cf), "w") as f:
                 f.write(generate_c_file_content(test, fc))
             
-            # OHNE iterations - die Struktur wird in generate_test_suite_c angepasst
+            # WITHOUT iterations - structure will be adapted in generate_test_suite_c
             test_entries.append(
                 f'    {{"{test["name"]}", {{.as_result = {fn}}}, '
                 f'{test["instruction_count"]}, "{test.get("description","")}", '
@@ -256,14 +256,14 @@ void print_menu(void) {
     printf("\\n╔════════════════════════════════════════════════╗\\n");
     printf("║ ESP32-C6 BENCHMARKING SUITE                   ║\\n");
     printf("╠════════════════════════════════════════════════╣\\n");
-    printf("║ 1. Alle Tests       2. Nur Latenz             ║\\n");
-    printf("║ 3. Nur Durchsatz     4. Latenz: Single        ║\\n");
-    printf("║ 5. Latenz: Sequenz   6. Latenz: Multi         ║\\n");
-    printf("║ 7. Latenz: RAW Chains 8. Latenz: Branch       ║\\n");
-    printf("║ 9. Durchsatz: Alle   10. Vergleich L/D        ║\\n");
-    printf("║ 0. Beenden                                     ║\\n");
+    printf("║ 1. All Tests        2. Latency Only            ║\\n");
+    printf("║ 3. Throughput Only   4. Latency: Single        ║\\n");
+    printf("║ 5. Latency: Sequence  6. Latency: Multi         ║\\n");
+    printf("║ 7. Latency: RAW Chains 8. Latency: Branch       ║\\n");
+    printf("║ 9. Throughput: All   10. Compare L/D           ║\\n");
+    printf("║ 0. Exit                                        ║\\n");
     printf("╚════════════════════════════════════════════════╝\\n");
-    printf("Auswahl: "); fflush(stdout);
+    printf("Choice: "); fflush(stdout);
 }
 
 int get_input_esp32c6(void) {
@@ -292,7 +292,7 @@ void app_main(void) {
     while (1) {
         print_menu();
         int choice = get_input_esp32c6();
-        if (choice < 0 || choice > 10) { printf("\\n❌ Ungültig!\\n"); continue; }
+        if (choice < 0 || choice > 10) { printf("\\n❌ Invalid choice!\\n"); continue; }
         printf("\\n");
         
         switch (choice) {
@@ -306,9 +306,9 @@ void app_main(void) {
             case 8: run_latency_branch_tests(); break;
             case 9: run_all_throughput_tests(); break;
             case 10: compare_latency_throughput(); break;
-            case 0: printf("Beendet.\\n"); break;
+            case 0: printf("Exiting.\\n"); break;
         }
-        if (choice != 0) { printf("\\n✅ Fertig! Taste für Menü...\\n"); }
+        if (choice != 0) { printf("\\n✅ Done! Press any key for menu...\\n"); }
         esp_task_wdt_reset(); vTaskDelay(pdMS_TO_TICKS(100));
     }
 }"""
@@ -387,7 +387,7 @@ const int LATENCY_TEST_COUNT = {len(entries_l)};
 const int THROUGHPUT_TEST_COUNT = {len(entries_t)};
 const int TOTAL_TEST_COUNT = {len(all_entries)};
 
-// Struktur OHNE iterations-Feld
+// Structure WITHOUT iterations field
 typedef struct {{
     const char* name; 
     test_func_t func; 
@@ -458,7 +458,7 @@ void run_latency_divider_value_tests(void) {{
     for (int i=0; i<NUM_TESTS; i++)
         if (!strcmp(all_tests[i].type,"latency") && all_tests[i].test_value != -1 &&
             strstr(all_tests[i].category,"DIV"))
-            printf("%s: %.2f cycles (CPI: %.2f) - Wert=%d (%s)\\n", 
+            printf("%s: %.2f cycles (CPI: %.2f) - Value=%d (%s)\\n", 
                    all_tests[i].name, all_tests[i].func.as_result().mean,
                    all_tests[i].func.as_result().cpi,
                    all_tests[i].test_value, all_tests[i].value_type);
@@ -466,7 +466,7 @@ void run_latency_divider_value_tests(void) {{
 
 void run_all_latency_tests(void) {{
     printf("\\n================================================================");
-    printf("\\n ALLE LATENZ-TESTS (%d Tests)", LATENCY_TEST_COUNT);
+    printf("\\n ALL LATENCY TESTS (%d Tests)", LATENCY_TEST_COUNT);
     printf("\\n================================================================\\n\\n");
     
     printf("%-45s %-8s %-8s %-12s %s\\n", 
@@ -497,9 +497,9 @@ void run_all_latency_tests(void) {{
         }}
     }}
     
-    printf("\\n Zusammenfassung:\\n");
-    printf("  • Tests insgesamt: %d\\n", count);
-    printf("  • Durchschnittlicher CPI: %.2f\\n", total_cpi / count);
+    printf("\\n Summary:\\n");
+    printf("  • Total tests: %d\\n", count);
+    printf("  • Average CPI: %.2f\\n", total_cpi / count);
 }}
 
 void run_throughput_base_tests(void) {{
@@ -513,7 +513,7 @@ void run_throughput_divider_tests(void) {{
     printf("\\n--- Divider Throughput ---\\n");
     for (int i=0; i<NUM_TESTS; i++)
         if (!strcmp(all_tests[i].type,"throughput") && strstr(all_tests[i].category,"DIVIDER"))
-            printf("%s (Wert=%d, %s): CPI = %.3f\\n", 
+            printf("%s (Value=%d, %s): CPI = %.3f\\n", 
                    all_tests[i].name, all_tests[i].test_value, 
                    all_tests[i].value_type, all_tests[i].func.as_result().cpi);
 }}
@@ -527,7 +527,7 @@ void run_throughput_comparison_tests(void) {{
 
 void run_all_throughput_tests(void) {{
     printf("\\n================================================================");
-    printf("\\n ALLE DURCHSATZ-TESTS (%d Tests)", THROUGHPUT_TEST_COUNT);
+    printf("\\n ALL THROUGHPUT TESTS (%d Tests)", THROUGHPUT_TEST_COUNT);
     printf("\\n================================================================\\n\\n");
     
     printf("%-45s %-10s %-10s %-15s %s\\n", 
@@ -558,10 +558,10 @@ void run_all_throughput_tests(void) {{
         }}
     }}
     
-    printf("\\n Zusammenfassung:\\n");
-    printf("  • Tests insgesamt: %d\\n", count);
-    printf("  • Durchschnittlicher CPI: %.3f\\n", total_cpi / count);
-    printf("  • Durchschnittlicher IPC: %.3f\\n", 1.0f / (total_cpi / count));
+    printf("\\n Summary:\\n");
+    printf("  • Total tests: %d\\n", count);
+    printf("  • Average CPI: %.3f\\n", total_cpi / count);
+    printf("  • Average IPC: %.3f\\n", 1.0f / (total_cpi / count));
 }}
 
 void run_all_tests(void) {{ 
@@ -571,13 +571,13 @@ void run_all_tests(void) {{
 
 void compare_latency_throughput(void) {{
     printf("\\n================================================================");
-    printf("\\n VERGLEICH LATENZ vs DURCHSATZ");
+    printf("\\n LATENCY vs THROUGHPUT COMPARISON");
     printf("\\n================================================================\\n\\n");
     
     printf("%-20s %-15s %-15s %-15s %s\\n", 
-           "Wert", "Latenz CPI", "Durchsatz CPI", "Ratio", "Pipelined?");
+           "Operation", "Latency CPI", "Throughput CPI", "Ratio", "Pipelined?");
     printf("%-20s %-15s %-15s %-15s %s\\n",
-           "----", "-----------", "-------------", "-----", "---------");
+           "---------", "-----------", "-------------", "-----", "---------");
     
     printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "ALU", 1.0, 1.0, 1.0, "N/A");
     printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "mul", 1.0, 1.0, 1.0, "Pipelined");
@@ -585,9 +585,9 @@ void compare_latency_throughput(void) {{
     printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "div/rem", 10.0, 10.0, 1.0, "Non-pipelined");
     printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "Load/Store", 1.0, 1.0, 1.0, "N/A");
     
-    printf("\\n✅ Hinweis: Ratio = Latenz-CPI / Durchsatz-CPI.\\n");
-    printf("   Bei vollständig gepipelinten Einheiten ist der Durchsatz = 1/Latenz.\\n");
-    printf("   Der Dividierer ist nicht gepipelint (Durchsatz = Latenz = 10 Zyklen).\\n");
+    printf("\\n✅ Note: Ratio = Latency CPI / Throughput CPI.\\n");
+    printf("   For fully pipelined units, throughput = 1/latency.\\n");
+    printf("   The divider is not pipelined (throughput = latency = 10 cycles).\\n");
 }}
 """
         with open(os.path.join(MAIN_DIR, "esp32c6_test_suite.c"), "w") as f:
@@ -609,9 +609,9 @@ def main():
     
     total_tests = len(latency_tests) + len(throughput_tests)
     
-    print(f"\n  GESAMT: {total_tests} Tests")
-    print(f"   • Latenz: {len(latency_tests)}")
-    print(f"   • Durchsatz: {len(throughput_tests)}")
+    print(f"\n  TOTAL: {total_tests} tests")
+    print(f"   • Latency: {len(latency_tests)}")
+    print(f"   • Throughput: {len(throughput_tests)}")
     
     if latency_tests:
         categories = defaultdict(int)
@@ -619,11 +619,11 @@ def main():
             cat = t.get('category', 'UNKNOWN')
             categories[cat] += 1
         
-        print("\n  Latenz-Tests nach Kategorie:")
+        print("\n  Latency tests by category:")
         for cat, count in sorted(categories.items()):
             print(f"    • {cat}: {count}")
     
-    print("\n  Generiere Dateien...")
+    print("\n  Generating files...")
     
     os.makedirs(MAIN_DIR, exist_ok=True)
     os.makedirs(TESTS_DIR, exist_ok=True)
@@ -645,18 +645,18 @@ def main():
     MasterFileGenerator.generate_cmakelists(files_l, files_t)
     
     print("\n" + "="*80)
-    print("  GENERIERUNG ABGESCHLOSSEN!".center(80))
+    print("  GENERATION COMPLETED!".center(80))
     print("="*80)
     
-    print(f"\n STATISTIK:")
-    print(f"   • Latenz-Tests: {len(latency_tests)}")
-    print(f"   • Durchsatz-Tests: {len(throughput_tests)}")
-    print(f"   • Gesamt: {total_tests}")
-    print(f"   • Generierte C-Dateien: {len(files_l) + len(files_t)}")
+    print(f"\n STATISTICS:")
+    print(f"   • Latency tests: {len(latency_tests)}")
+    print(f"   • Throughput tests: {len(throughput_tests)}")
+    print(f"   • Total: {total_tests}")
+    print(f"   • Generated C files: {len(files_l) + len(files_t)}")
     
-    print("\n  Nächste Schritte:")
+    print("\n  Next steps:")
     print("   idf.py clean && idf.py build && idf.py -p PORT flash monitor")
-    print("\n   Im Menü Option 1 wählen für ALLE Tests!")
+    print("\n   Select option 1 from menu for ALL tests!")
 
 if __name__ == "__main__":
     random.seed(42)
