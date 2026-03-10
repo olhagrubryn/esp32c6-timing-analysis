@@ -53,11 +53,11 @@ class TestCollector:
                         t.setdefault('category', 'UNKNOWN')
                         t.setdefault('test_group', '')
                         tests.append(t)
-                    print(f"      ✓ {len(generated)} tests generated")
+                    print(f"{len(generated)} tests generated")
                 else:
-                    print(f"      ⚠ No tests generated")
+                    print(f"No tests generated")
             except Exception as e:
-                print(f"      ❌ Error: {e}")
+                print(f" Error: {e}")
         
         return tests
     
@@ -85,11 +85,11 @@ class TestCollector:
                         t.setdefault('category', 'UNKNOWN')
                         t.setdefault('group', 'throughput_base')
                         tests.append(t)
-                    print(f"      ✓ {len(generated)} tests generated")
+                    print(f"{len(generated)} tests generated")
                 else:
-                    print(f"      ⚠ No tests generated")
+                    print(f"No tests generated")
             except Exception as e:
-                print(f"      ❌ Error: {e}")
+                print(f"Error: {e}")
         
         return tests
 
@@ -100,7 +100,7 @@ class LatencyFileGenerator:
         subdirs = ["single", "memory", "raw_chains", "branch", "sequences"]
         for d in subdirs:
             os.makedirs(os.path.join(TESTS_DIR, d), exist_ok=True)
-        print(f"  ✓ Created latency test subdirectories")
+        print(f"Created latency test subdirectories")
     
           
     @staticmethod
@@ -292,7 +292,7 @@ void app_main(void) {
     while (1) {
         print_menu();
         int choice = get_input_esp32c6();
-        if (choice < 0 || choice > 10) { printf("\\n❌ Invalid choice!\\n"); continue; }
+        if (choice < 0 || choice > 10) { printf("\\nInvalid choice!\\n"); continue; }
         printf("\\n");
         
         switch (choice) {
@@ -308,7 +308,7 @@ void app_main(void) {
             case 10: compare_latency_throughput(); break;
             case 0: printf("Exiting.\\n"); break;
         }
-        if (choice != 0) { printf("\\n✅ Done! Press any key for menu...\\n"); }
+        if (choice != 0) { printf("\\nDone! Press any key for menu...\\n"); }
         esp_task_wdt_reset(); vTaskDelay(pdMS_TO_TICKS(100));
     }
 }"""
@@ -585,7 +585,7 @@ void compare_latency_throughput(void) {{
     printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "div/rem", 10.0, 10.0, 1.0, "Non-pipelined");
     printf("%-20s %-15.1f %-15.1f %-15.2f %s\\n", "Load/Store", 1.0, 1.0, 1.0, "N/A");
     
-    printf("\\n✅ Note: Ratio = Latency CPI / Throughput CPI.\\n");
+    printf("\\nNote: Ratio = Latency CPI / Throughput CPI.\\n");
     printf("   For fully pipelined units, throughput = 1/latency.\\n");
     printf("   The divider is not pipelined (throughput = latency = 10 cycles).\\n");
 }}

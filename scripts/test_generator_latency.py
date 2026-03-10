@@ -1383,7 +1383,7 @@ def generate_complete_test_suite():
     print("  GENERATION COMPLETE!".center(80))
     print("=" * 80)
     
-    print(f"\n📊 FINAL TEST STATISTICS:")
+    print(f"\n FINAL TEST STATISTICS:")
     print(f"   • TOTAL TESTS: {len(all_tests)}")
     print(f"   • Single instruction (1 op): {len(single_tests)}")
     print(f"   • Short sequences (2-6 ops): {len(sequence_tests)}")
@@ -1391,7 +1391,7 @@ def generate_complete_test_suite():
     print(f"   • Long sequences (20-50 ops): {len(long_tests)}")
     
     lengths = [t["instruction_count"] for t in all_tests]
-    print(f"\n📊 INSTRUCTION COUNT DISTRIBUTION:")
+    print(f"\n INSTRUCTION COUNT DISTRIBUTION:")
     print(f"   • Min: {min(lengths)} op")
     print(f"   • Max: {max(lengths)} ops")
     print(f"   • Avg: {sum(lengths)/len(lengths):.1f} ops")

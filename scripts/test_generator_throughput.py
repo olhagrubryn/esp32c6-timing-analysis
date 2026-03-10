@@ -650,10 +650,10 @@ def main():
     print("  GENERATION COMPLETE!".center(80))
     print("=" * 80)
     
-    print("\n📋 Nächste Schritte:")
-    print("  1. Baue mit 'idf.py build'")
-    print("  2. Flashe mit 'idf.py -p PORT flash monitor'")
-    print("\n   WICHTIG: Gleiche Werte wie Latency-Tests ermöglichen Vergleich!")
+    print("\nNext steps:")
+    print("  1. Build with 'idf.py build'")
+    print("  2. Flash with 'idf.py -p PORT flash monitor'")
+    print("\n   IMPORTANT: Use the same values as in the latency tests to allow comparison!")
 
 if __name__ == "__main__":
     random.seed(42)
