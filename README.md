@@ -1,8 +1,8 @@
-| Supported Targets | ESP32-C6 |
-| ----------------- | -------- |
+# Get Started Examples
 
-# ESP32-C6 RISC-V Timing Analysis
+Simple code to get started with ESP32 and ESP-IDF.
 
+<<<<<<< HEAD
 A comprehensive benchmarking suite for analyzing RISC-V instruction timing and microarchitecture performance on ESP32-C6 processors.
 
 ## Project Overview
@@ -56,3 +56,6 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 # To save results to file
 idf.py -p /dev/ttyUSB0 flash monitor 2>&1 | tee benchmark_results.csv
+=======
+See the [README.md](../README.md) file in the upper level [examples](../) directory for more information about examples.
+>>>>>>> e49696e1e41650f0299b439f47d97332a86b4fe0

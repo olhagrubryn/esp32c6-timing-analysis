@@ -39,7 +39,7 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/esp-idf/cmake_install.cmake")
+  include("/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader/esp-idf/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/olisinka/BA/esp32c6-timing-analysis-1/build/bootloader/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# scripts/base/instructions.py
+
+from typing import Dict, Set, List
+
+class RISCVInstructions:
+    """Datenbank aller RISC-V Instruktionen."""
+    
+    @staticmethod
+    def get_all_instructions() -> Dict[str, str]:
+        return {
+            # ALU
+            "add":  "add {dst}, {src1}, {src2}",
+            "sub":  "sub {dst}, {src1}, {src2}",
+            "xor":  "xor {dst}, {src1}, {src2}",
+            "or":   "or {dst}, {src1}, {src2}",
+            "and":  "and {dst}, {src1}, {src2}",
+            "slt":  "slt {dst}, {src1}, {src2}",
+            "sltu": "sltu {dst}, {src1}, {src2}",
+            # Shift
+            "sll":  "sll {dst}, {src1}, {src2}",
+            "srl":  "srl {dst}, {src1}, {src2}",
+            "sra":  "sra {dst}, {src1}, {src2}",
+            # Mul
+            "mul":   "mul {dst}, {src1}, {src2}",
+            "mulh":  "mulh {dst}, {src1}, {src2}",
+            "mulhu": "mulhu {dst}, {src1}, {src2}",
+            "mulhsu": "mulhsu {dst}, {src1}, {src2}",
+            # Div
+            "div":   "div {dst}, {src1}, {src2}",
+            "divu":  "divu {dst}, {src1}, {src2}",
+            "rem":   "rem {dst}, {src1}, {src2}",
+            "remu":  "remu {dst}, {src1}, {src2}",
+            # Load (mit offset)
+            "lb":   "lb {dst}, {offset}({base})",
+            "lh":   "lh {dst}, {offset}({base})",
+            "lw":   "lw {dst}, {offset}({base})",
+            "lbu":  "lbu {dst}, {offset}({base})",
+            "lhu":  "lhu {dst}, {offset}({base})",
+            # Store (mit offset)
+            "sb":   "sb {src}, {offset}({base})",
+            "sh":   "sh {src}, {offset}({base})",
+            "sw":   "sw {src}, {offset}({base})",
+            # Immediate
+            "addi":  "addi {dst}, {src1}, {imm}",
+            "xori":  "xori {dst}, {src1}, {imm}",
+            "ori":   "ori {dst}, {src1}, {imm}",
+            "andi":  "andi {dst}, {src1}, {imm}",
+            "slli":  "slli {dst}, {src1}, {imm}",
+            "srli":  "srli {dst}, {src1}, {imm}",
+            "srai":  "srai {dst}, {src1}, {imm}",
+            "slti":  "slti {dst}, {src1}, {imm}",
+            "sltiu": "sltiu {dst}, {src1}, {imm}",
+        }
+    
+    @staticmethod
+    def get_instructions_by_class() -> Dict[str, Set[str]]:
+        return {
+            "CLASS1_ALU": {"add","sub","xor","or","and","slt","sltu"},
+            "CLASS2_SHIFT": {"sll","srl","sra"},
+            "CLASS3_MUL": {"mul","mulh","mulhu","mulhsu"},
+            "CLASS4_DIV": {"div","divu","rem","remu"},
+            "CLASS5_LOAD": {"lb","lh","lw","lbu","lhu"},
+            "CLASS6_STORE": {"sb","sh","sw"},
+            "CLASS7_IMMEDIATE": {"addi","xori","ori","andi","slli","srli","srai","slti","sltiu"},
+        }
+    
+    @staticmethod
+    def get_valid_immediate_range(insn_name: str) -> List[int]:
+        if insn_name in ["slli","srli","srai"]:
+            return [0,1,2,3,4,5,6,7,8,12,15,16,24,31]
+        if insn_name in ["addi","xori","ori","andi","slti","sltiu"]:
+            return [0,1,2,4,8,16,32,64,128,255,256,511,1023,2047]
+        return [0,1,2,4,8,16,32,64]
