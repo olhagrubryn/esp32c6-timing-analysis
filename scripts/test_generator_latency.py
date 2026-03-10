@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # scripts/generate_latency_tests.py - ESP32-C6 Instruction Latency Test Generator
-# FIXED: Load access fault - ENDGÜLTIG GEFIXT!
-# a3 wird in JEDER Iteration mit ptr initialisiert!
+
 
 import os
 import sys
@@ -10,19 +9,12 @@ import shutil
 import itertools
 from collections import defaultdict
 
-# ============================================================================
-# Pfad-Konfiguration
-# ============================================================================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
 MAIN_DIR = os.path.join(PROJECT_ROOT, "main")
 TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
-
-# ============================================================================
-# GÜLTIGE RISC-V REGISTER FÜR ESP32-C6 - FIXED: a3 ist NUR basis-register!
-# ============================================================================
 
 class RISCVRegisters:
     """Definiert gültige Register für ESP32-C6."""
@@ -31,24 +23,24 @@ class RISCVRegisters:
     # a2-a7 sind frei verwendbar, aber a3 ist reserviert für Base Pointer!
     TEMP_REGS = ["a2", "a4", "a5", "a6", "a7"]  # a3 entfernt!
     
-    # Für Load/Store: Basis-Register (muss erhalten bleiben)
-    BASE_REG = "a3"  # a3 ist NUR für Base Pointer
+    # Für Load/Store: Basis-Register 
+    BASE_REG = "a3"  
     
-    # Für Dependency Chains: Verschiedene Destination Register - OHNE a3!
+    # Für Dependency Chains
     DST_REGS = ["a2", "a4", "a5", "a6", "a7"]
     
-    # Für Source Register - OHNE a3 für Operationen die a3 überschreiben würden!
-    SRC_REGS = ["a2", "a4", "a5", "a6", "a7"]  # a3 entfernt!
+    # Für Source Register 
+    SRC_REGS = ["a2", "a4", "a5", "a6", "a7"] 
     
     @staticmethod
     def get_register_combinations():
         """Verschiedene Register-Kombinationen für Tests - OHNE a3 als dst/src!"""
         return {
             "same_reg": ["a2", "a2", "a2"],  # dst = src1 = src2
-            "diff_reg": ["a2", "a4", "a5"],  # alle verschieden, ohne a3
+            "diff_reg": ["a2", "a4", "a5"],  # alle verschieden
             "dst_src1": ["a2", "a2", "a4"],  # dst = src1
             "dst_src2": ["a2", "a4", "a2"],  # dst = src2
-            "src1_src2": ["a4", "a4", "a4"],  # src1 = src2, ohne a3
+            "src1_src2": ["a4", "a4", "a4"],  # src1 = src2
         }
     
     @staticmethod
@@ -60,9 +52,6 @@ class RISCVRegisters:
         else:
             return [regs[i % len(regs)] for i in range(count)]
 
-# ============================================================================
-# 1. RISCV INSTRUKTIONEN DATENBANK (UNVERÄNDERT)
-# ============================================================================
 
 class RISCVInstructions:
     """Zentrale Datenbank aller RISC-V Instruktionen für ESP32-C6."""
@@ -147,11 +136,6 @@ class RISCVInstructions:
         else:
             return [0, 1, 2, 4, 8, 16, 32, 64]
 
-# ============================================================================
-# 2. NEUE KLASSE: Multi-Instruction Test Generator (UNVERÄNDERT)
-# ============================================================================
-
-# In scripts/generators/latency_generator.py - MultiInstructionTestGenerator
 
 class MultiInstructionTestGenerator:
     """Multi-Instruction Tests (10-30 Instruktionen)."""
@@ -173,16 +157,16 @@ class MultiInstructionTestGenerator:
                                 instr = f"{insn_name} {dst}, {offset}({RISCVRegisters.BASE_REG})"
                                 instrs.append((insn_name, instr))
                             
-                            # FIX: Setze eindeutige Kategorisierung
+                 
                             test = {
                                 "name": f"{insn_name}_multi{count}",
                                 "safe_name": f"{insn_name}_multi{count}",
                                 "instructions": instrs,
                                 "iterations": 200,
-                                "category": f"{category}_MULTI",  # Spezifischere Kategorie
+                                "category": f"{category}_MULTI",  
                                 "instruction_count": count,
                                 "type": "latency",
-                                "test_group": "multi"  # Zusätzliches Feld für Gruppierung
+                                "test_group": "multi"  
                             }
                             tests.append(test)
         return tests
@@ -333,9 +317,7 @@ class MultiInstructionTestGenerator:
         
         return tests
 
-# ============================================================================
-# 3. NEUE KLASSE: Multi-Sequence Test Generator (UNVERÄNDERT)
-# ============================================================================
+
 
 class MultiSequenceTestGenerator:
     """Generiert lange Sequenz-Tests mit 20-50 Instruktionen."""
@@ -490,7 +472,7 @@ class MultiSequenceTestGenerator:
                 offset = (i * 4) % 64
             elif pattern == "strided":
                 offset = (i * 8) % 64
-            else:  # random
+            else:  
                 offset = random.choice([0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60])
             
             if i % 3 == 0:
@@ -504,9 +486,6 @@ class MultiSequenceTestGenerator:
         
         return instructions
 
-# ============================================================================
-# 4. ORIGINAL: SingleInstructionTestGenerator (FIXED: Kein a3 als src1!)
-# ============================================================================
 
 class SingleInstructionTestGenerator:
     """Original - Generiert Single-Instruction Tests (1 Instruktion pro Durchlauf)."""
@@ -568,10 +547,10 @@ class SingleInstructionTestGenerator:
             
             for imm in valid_imms[:6]:
                 try:
-                    # FIXED: src1 ist a4 (NICHT a3!) - a3 bleibt Base Pointer!
+                    
                     concrete_instr = insn_template.format(
                         dst="a2",
-                        src1="a4",  # WICHTIG: a4 statt a3!
+                        src1="a4",  
                         imm=imm
                     )
                     test = {
@@ -594,7 +573,6 @@ class SingleInstructionTestGenerator:
             
             for comb_name, regs in reg_combs.items():
                 dst, src1, src2 = regs
-                # Prüfe ob alle Register gültig sind (OHNE a3!)
                 if all(r in RISCVRegisters.SRC_REGS for r in [dst, src1, src2]):
                     try:
                         concrete_instr = insn_template.format(
@@ -663,9 +641,6 @@ class SingleInstructionTestGenerator:
         
         return all_tests
 
-# ============================================================================
-# 5. ORIGINAL: SequenceTestGenerator (FIXED: Kein a3 als src1!)
-# ============================================================================
 
 class SequenceTestGenerator:
     """Original - Generiert kurze Sequenz-Tests (2-6 Instruktionen)."""
@@ -701,7 +676,7 @@ class SequenceTestGenerator:
                 else:  # REG2REG oder DIV_MUL
                     if i == 0:
                         dst = "a2"
-                        src1 = "a4"  # FIXED: a4 statt a3!
+                        src1 = "a4"  
                         src2 = "a5"
                     else:
                         dst = RISCVRegisters.DST_REGS[i % len(RISCVRegisters.DST_REGS)]
@@ -948,9 +923,7 @@ class SequenceTestGenerator:
             "insn_name": "sequence"
         }
 
-# ============================================================================
-# 6. C CODE GENERATOR - FIXED: a3 wird in JEDER Iteration initialisiert!
-# ============================================================================
+
 
 def generate_test_function(test):
     """C-Code Generator - FIXED: a3 wird in JEDER Iteration mit ptr initialisiert!"""
@@ -964,9 +937,8 @@ def generate_test_function(test):
     
     instruction_block = "".join(instruction_lines)
     
-    # ============= DAS IST DER CRITICAL FIX! =============
-    # a3 wird in JEDER Iteration mit ptr initialisiert!
-    # =====================================================
+  
+  
     func_template = f"""float {func_name}(void) {{
     float total_cycles = 0;
     
@@ -1029,9 +1001,7 @@ def generate_test_function(test):
 """
     return func_template
 
-# ============================================================================
-# 7. FILE GENERATOR (UNVERÄNDERT)
-# ============================================================================
+
 
 def ensure_directories():
     """Stellt sicher, dass alle benötigten Verzeichnisse existieren."""
@@ -1053,10 +1023,7 @@ def generate_all_test_files(all_tests):
     
     ensure_directories()
     
-    # ========================================================================
-    # 1. Generiere Test-Files in verschiedenen Unterverzeichnissen
-    # ========================================================================
-    
+
     test_files = []
     test_categories = defaultdict(list)
     
@@ -1125,10 +1092,8 @@ extern portMUX_TYPE test_mutex;
             test_files.append((safe_name, test, c_filename, h_filename, subdir))
             print(f"  ✓ Generated: tests/{subdir}/{c_filename} ({test['instruction_count']} ops)")
     
-    # ========================================================================
-    # 2. Generiere zentrale Header-Datei
-    # ========================================================================
-    
+
+
     central_header = """#ifndef ESP32C6_LATENCY_TESTS_H
 #define ESP32C6_LATENCY_TESTS_H
 
@@ -1168,10 +1133,7 @@ extern const int RANDOM_TEST_COUNT;
     with open(os.path.join(MAIN_DIR, "esp32c6_latency_tests.h"), "w") as f:
         f.write(central_header)
     
-    # ========================================================================
-    # 3. Generiere MAIN Test-Runner
-    # ========================================================================
-    
+
     test_definitions = []
     for safe_name, test, _, _, subdir in test_files:
         test_definitions.append(f'    {{"{test["name"]}", test_{safe_name}, {test["iterations"]}, {test["instruction_count"]}, "{test["description"]}", "{test["category"]}", "{subdir}"}}')
@@ -1324,11 +1286,7 @@ void print_statistical_summary(void) {{
     
     with open(os.path.join(MAIN_DIR, "esp32c6_latency_tests.c"), "w") as f:
         f.write(main_content)
-    
-    # ========================================================================
-    # 4. Generiere main.c
-    # ========================================================================
-    
+  
     main_c = """#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -1361,10 +1319,6 @@ void app_main(void) {
     with open(os.path.join(MAIN_DIR, "main.c"), "w") as f:
         f.write(main_c)
     
-    # ========================================================================
-    # 5. Generiere CMakeLists.txt
-    # ========================================================================
-    
     cmake_sources = "main.c\n    esp32c6_latency_tests.c\n"
     for safe_name, test, c_file, h_file, subdir in test_files:
         cmake_sources += f"    ../tests/{subdir}/{c_file}\n"
@@ -1379,9 +1333,6 @@ void app_main(void) {
     
     return test_files
 
-# ============================================================================
-# 8. MAIN GENERATOR
-# ============================================================================
 
 def generate_complete_test_suite():
     """Hauptfunktion: Generiert Test-Suite mit SINGLE + MULTI instruction tests."""
@@ -1393,27 +1344,29 @@ def generate_complete_test_suite():
     print("  FIXED: a3 wird in JEDER Iteration initialisiert!".center(80))
     print("=" * 80)
     
-    # 1. ORIGINAL: Single-Instruction Tests (gefixt: kein a3 als src1)
+ 
     print("\n[1/5] Generating SINGLE instruction tests (1 op)...")
     single_tests = SingleInstructionTestGenerator.generate_all_single_instruction_tests()
     print(f"      → {len(single_tests)} single instruction test variants")
     
-    # 2. ORIGINAL: Sequence Tests (gefixt: kein a3 als src1)
+
+
     print("\n[2/5] Generating SEQUENCE tests (2-6 ops)...")
     sequence_tests = SequenceTestGenerator.generate_all_sequence_tests()
     print(f"      → {len(sequence_tests)} sequence test variants")
     
-    # 3. NEU: Multi-Instruction Tests (10,20,30 ops)
+   
     print("\n[3/5] Generating MULTI-INSTRUCTION tests (10,20,30 ops)...")
     multi_tests = MultiInstructionTestGenerator.generate_multi_instruction_tests()
     print(f"      → {len(multi_tests)} multi-instruction test variants")
     
-    # 4. NEU: Long Sequence Tests (20-50 ops)
+   
+   
     print("\n[4/5] Generating LONG SEQUENCE tests (20-50 ops)...")
     long_tests = MultiSequenceTestGenerator.generate_multi_sequence_tests()
     print(f"      → {len(long_tests)} long sequence test variants")
     
-    # 5. Kombiniere ALLE Tests
+
     print("\n[5/5] Combining ALL test suites...")
     all_tests = single_tests + sequence_tests + multi_tests + long_tests
     print(f"      → TOTAL TESTS: {len(all_tests)}")
@@ -1422,7 +1375,7 @@ def generate_complete_test_suite():
     print(f"      → Multi: {len(multi_tests)}")
     print(f"      → Long: {len(long_tests)}")
     
-    # Generiere alle Test-Files
+
     print("\nGenerating test files...")
     test_files = generate_all_test_files(all_tests)
     
@@ -1446,9 +1399,6 @@ def generate_complete_test_suite():
     
     return all_tests
 
-# ============================================================================
-# 9. MAIN
-# ============================================================================
 
 if __name__ == "__main__":
     random.seed(42)

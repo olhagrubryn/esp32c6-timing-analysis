@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-# scripts/generate_throughput_tests.py - ESP32-C6 Instruction Throughput Test Generator
-# FIXED: Funktionsnamen-Konsistenz!
+# scripts/generate_throughput_tests.py 
+
 
 import os
 import sys
 import random
 from collections import defaultdict
 
-# ============================================================================
-# PFAD-KONFIGURATION
-# ============================================================================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -17,9 +14,6 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 MAIN_DIR = os.path.join(PROJECT_ROOT, "main")
 TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
 
-# ============================================================================
-# TEST VALUE REGISTRY - DIESELBEN WERTE WIE LATENCY-TESTS!
-# ============================================================================
 
 class TestValueRegistry:
     """Zentrale Registry für Testwerte."""
@@ -46,9 +40,6 @@ class TestValueRegistry:
             return "EDGE"
         return "UNKNOWN"
 
-# ============================================================================
-# RISC-V REGISTER (wie latency_tests.py)
-# ============================================================================
 
 class RISCVRegisters:
     """Definiert gültige Register für ESP32-C6."""
@@ -65,9 +56,6 @@ class RISCVRegisters:
             return regs[:count]
         return [regs[i % len(regs)] for i in range(count)]
 
-# ============================================================================
-# RISC-V INSTRUKTIONEN
-# ============================================================================
 
 class RISCVInstructions:
     """Datenbank aller RISC-V Instruktionen."""
@@ -109,9 +97,6 @@ class RISCVInstructions:
         }
         return characteristics.get(insn_name, "THROUGHPUT_SINGLE_ISSUE")
 
-# ============================================================================
-# THROUGHPUT TEST GENERATOR
-# ============================================================================
 
 class ThroughputTestGenerator:
     """Generiert Throughput-Tests."""
@@ -200,7 +185,7 @@ class ThroughputTestGenerator:
             return tests
         
         for count in [4, 8, 16]:
-            # HIGH Throughput
+
             for value in TestValueRegistry.HIGH_THROUGHPUT_VALUES:
                 test = ThroughputTestGenerator._create_div_value_test(
                     template, count, value, "HIGH"
@@ -261,13 +246,13 @@ class ThroughputTestGenerator:
         for value in all_values:
             value_type = TestValueRegistry.get_value_category(value)
             
-            # Dependency-Free (Throughput)
+            # Dependency-Free 
             free_test = ThroughputTestGenerator._create_comparison_test(
                 template, value, value_type, free=True
             )
             tests.append(free_test)
             
-            # Dependent (Latency - gleicher Wert!)
+            # Dependent 
             dep_test = ThroughputTestGenerator._create_comparison_test(
                 template, value, value_type, free=False
             )
@@ -321,14 +306,11 @@ class ThroughputTestGenerator:
             "value_type": value_type
     }
 
-# ============================================================================
-# C CODE GENERATOR - FIXED: Konsistenter Funktionsname!
-# ============================================================================
 
 def generate_test_function(test):
     """C-Code Generator - FIXED: safe_name wird für Funktionsnamen verwendet!"""
     
-    # WICHTIG: Verwende safe_name für konsistenten Funktionsnamen!
+ 
     func_name = f"test_{test['safe_name']}"
     
     instruction_lines = []
@@ -398,9 +380,6 @@ def generate_test_function(test):
 """
     return func_name, func_template
 
-# ============================================================================
-# FILE GENERATOR - FIXED: Korrekte Funktionsnamen in Header!
-# ============================================================================
 
 def ensure_directories():
     """Stellt sicher, dass alle benötigten Verzeichnisse existieren."""
@@ -608,7 +587,6 @@ void print_value_comparison(void) {{
     with open(os.path.join(MAIN_DIR, "esp32c6_throughput.c"), "w") as f:
         f.write(main_content)
     
-    # main.c
     main_c = """#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -652,9 +630,6 @@ void app_main(void) {
     
     return test_files
 
-# ============================================================================
-# MAIN
-# ============================================================================
 
 def main():
     """Hauptfunktion."""

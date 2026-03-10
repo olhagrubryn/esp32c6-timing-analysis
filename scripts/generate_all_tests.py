@@ -157,7 +157,7 @@ class LatencyFileGenerator:
                 with open(os.path.join(subdir_path, cf), "w") as f:
                     f.write(generate_c_file_content(test, fc))
                 
-                # WITHOUT iterations - structure will be adapted in generate_test_suite_c
+                
                 test_entries.append(
                     f'    {{"{test["name"]}", {{.as_result = {fn}}}, '
                     f'{test["instruction_count"]}, "{test.get("description","")}", '
@@ -209,7 +209,7 @@ class ThroughputFileGenerator:
             with open(os.path.join(subdir_path, cf), "w") as f:
                 f.write(generate_c_file_content(test, fc))
             
-            # WITHOUT iterations - structure will be adapted in generate_test_suite_c
+         
             test_entries.append(
                 f'    {{"{test["name"]}", {{.as_result = {fn}}}, '
                 f'{test["instruction_count"]}, "{test.get("description","")}", '
@@ -387,7 +387,7 @@ const int LATENCY_TEST_COUNT = {len(entries_l)};
 const int THROUGHPUT_TEST_COUNT = {len(entries_t)};
 const int TOTAL_TEST_COUNT = {len(all_entries)};
 
-// Structure WITHOUT iterations field
+
 typedef struct {{
     const char* name; 
     test_func_t func; 

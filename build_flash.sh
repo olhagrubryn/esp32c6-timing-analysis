@@ -32,4 +32,4 @@ echo "Starting serial monitor - Ausgabe wird in ${OUTPUT_FILE} gespeichert..."
 echo "Drücke Strg + ] zum Beenden"
 idf.py -p $PORT monitor | tee "$OUTPUT_FILE"
 
-echo "✅ Ausgabe gespeichert in: ${OUTPUT_FILE}"
+echo "Output saved in: ${OUTPUT_FILE}"

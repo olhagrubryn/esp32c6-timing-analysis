@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/base/code_generator.py - FINALE VERSION
+# scripts/base/code_generator.py 
 
 from typing import Tuple
 
@@ -64,13 +64,13 @@ def generate_loadstore_test_function(func_name: str, test: dict, instruction_blo
     clobber_list = [f'"{reg}"' for reg in sorted(used_regs)]
     clobber_str = ', '.join(clobber_list) + ', "memory"'
     
-    # Buffer-Deklaration (ohne Initialisierung)
+    # Buffer-Deklaration 
     buffer_decl = """    
     // Safe buffer in RAM
     static uint32_t safe_buffer[128] __attribute__((aligned(64)));
     """
     
-    # Dynamische Initialisierung zur Laufzeit - MIT KORREKTEN PRINTF FORMATS
+    # Dynamische Initialisierung zur Laufzeit 
     init_code = """
     // Dynamische Initialisierung des Buffers
     for (int i = 0; i < 128; i++) {
