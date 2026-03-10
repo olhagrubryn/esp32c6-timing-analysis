@@ -1,0 +1,6 @@
+Command: ninja all
+[1/4] cd /home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/esp-idf/esptool_py && /home/olisinka/.espressif/python_env/idf5.5_py3.10_env/bin/python /home/olisinka/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/partition_table/partition-table.bin /home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/hello_world.bin
+hello_world.bin binary size 0x1d580 bytes. Smallest app partition is 0x100000 bytes. 0xe2a80 bytes (89%) free.
+[2/4] Performing build step for 'bootloader'
+[1/1] cd /home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader/esp-idf/esptool_py && /home/olisinka/.espressif/python_env/idf5.5_py3.10_env/bin/python /home/olisinka/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /home/olisinka/BA/esp32c6-timing-analysis-1-backup/build/bootloader/bootloader.bin
+Bootloader binary size 0x57e0 bytes. 0x2820 bytes (31%) free.
